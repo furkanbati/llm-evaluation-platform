@@ -1,0 +1,7 @@
+services:
+  evaluation-api:
+    build: .
+    container_name: evaluation-api
+
+    ports:
+      - "8000:8000"
