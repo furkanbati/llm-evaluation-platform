@@ -6,6 +6,7 @@ from app.models import (
     EvaluationStatus,
 )
 from app.services.evaluation_engine import EvaluationEngine
+from app.services.model_client import ModelClient
 
 
 class EvaluationRunner:
@@ -14,17 +15,36 @@ class EvaluationRunner:
     def __init__(
         self,
         engine: EvaluationEngine,
+        model_client: ModelClient | None = None,
     ) -> None:
         self._engine = engine
+        self._model_client = model_client
 
     def run(
         self,
         dataset: Dataset,
         model_name: str,
-        generated_outputs: list[str],
         metrics: list[str],
+        generated_outputs: list[str] | None = None,
     ) -> EvaluationRun:
         """Evaluate all dataset items and return an evaluation run."""
+
+        if generated_outputs is None:
+            if self._model_client is None:
+                raise ValueError(
+                    "Model client is required when generated outputs "
+                    "are not provided"
+                )
+
+            inputs = [
+                item.input
+                for item in dataset.items
+            ]
+
+            generated_outputs = self._model_client.generate(
+                model_name=model_name,
+                inputs=inputs,
+            )
 
         if len(dataset.items) != len(generated_outputs):
             raise ValueError(

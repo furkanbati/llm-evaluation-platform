@@ -10,9 +10,24 @@ from app.models import (
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
+from app.services.model_client import ModelClient
 
 
-def create_runner() -> EvaluationRunner:
+class FakeModelClient(ModelClient):
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+    ) -> list[str]:
+        return [
+            "Paris",
+            "Ankara",
+        ]
+
+
+def create_runner(
+    model_client: ModelClient | None = None,
+) -> EvaluationRunner:
     registry = EvaluatorRegistry()
 
     registry.register(
@@ -22,7 +37,10 @@ def create_runner() -> EvaluationRunner:
 
     engine = EvaluationEngine(registry)
 
-    return EvaluationRunner(engine)
+    return EvaluationRunner(
+        engine=engine,
+        model_client=model_client,
+    )
 
 
 def create_dataset() -> Dataset:
@@ -57,6 +75,27 @@ def test_runner_evaluates_all_dataset_items():
     )
 
     assert len(run.results) == 2
+
+
+def test_runner_generates_outputs_with_model_client():
+    model_client = FakeModelClient()
+
+    runner = create_runner(
+        model_client=model_client,
+    )
+
+    dataset = create_dataset()
+
+    run = runner.run(
+        dataset=dataset,
+        model_name="test-model",
+        metrics=["exact_match"],
+    )
+
+    assert [result.generated_output for result in run.results] == [
+        "Paris",
+        "Ankara",
+    ]
 
 
 def test_runner_returns_evaluation_run():
