@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 
-from app.config import APP_NAME, APP_VERSION
+from app.config import APP_NAME, APP_VERSION, OLLAMA_BASE_URL
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
@@ -35,7 +35,7 @@ def create_evaluation_runner(
 
     if model_client is None:
         model_client = OllamaModelClient(
-            base_url="http://ollama:11434",
+            base_url=OLLAMA_BASE_URL,
         )
 
     return EvaluationRunner(
