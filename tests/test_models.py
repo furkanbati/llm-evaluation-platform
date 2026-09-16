@@ -79,7 +79,6 @@ def test_evaluation_request_validates_metrics() -> None:
             ],
         ),
         model_name="llama3",
-        generated_outputs=["4"],
         metrics=["exact_match", "semantic_similarity"],
     )
 
@@ -102,7 +101,6 @@ def test_evaluation_request_strips_metric_names() -> None:
             ],
         ),
         model_name="llama3",
-        generated_outputs=["4"],
         metrics=[
             " exact_match ",
             " semantic_similarity ",
@@ -114,10 +112,19 @@ def test_evaluation_request_strips_metric_names() -> None:
         "semantic_similarity",
     ]
 
+
 def test_evaluation_request_rejects_duplicate_metrics() -> None:
     with pytest.raises(ValidationError):
         EvaluationRequest(
-            dataset_id=UUID("12345678-1234-5678-1234-567812345678"),
+            dataset=Dataset(
+                name="Math Dataset",
+                items=[
+                    DatasetItem(
+                        input="2 + 2",
+                        expected_output="4",
+                    )
+                ],
+            ),
             model_name="llama3",
             metrics=[
                 "exact_match",
@@ -129,7 +136,15 @@ def test_evaluation_request_rejects_duplicate_metrics() -> None:
 def test_evaluation_request_rejects_empty_metric_name() -> None:
     with pytest.raises(ValidationError):
         EvaluationRequest(
-            dataset_id=UUID("12345678-1234-5678-1234-567812345678"),
+            dataset=Dataset(
+                name="Math Dataset",
+                items=[
+                    DatasetItem(
+                        input="2 + 2",
+                        expected_output="4",
+                    )
+                ],
+            ),
             model_name="llama3",
             metrics=[""],
         )

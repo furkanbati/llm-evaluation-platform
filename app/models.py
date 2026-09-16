@@ -53,7 +53,6 @@ class EvaluationRequest(BaseModel):
 
     dataset: Dataset
     model_name: str = Field(min_length=1, max_length=200)
-    generated_outputs: list[str] = Field(min_length=1)
     metrics: list[str] = Field(min_length=1)
 
     @field_validator("metrics")
@@ -70,7 +69,6 @@ class EvaluationRequest(BaseModel):
             raise ValueError("metric names must be unique")
 
         return normalized
-
 
 class MetricResult(BaseModel):
     """The result produced by a single evaluation metric."""

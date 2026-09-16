@@ -1,11 +1,22 @@
 from fastapi.testclient import TestClient
 
-from app.api import app
+import app.api as api
+from app.api import app, create_evaluation_runner
+from app.services.model_client import ModelClient
 
-client = TestClient(app)
+
+class FakeModelClient(ModelClient):
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+    ) -> list[str]:
+        return ["4"]
 
 
 def test_health() -> None:
+    client = TestClient(app)
+
     response = client.get("/health")
 
     assert response.status_code == 200
@@ -14,7 +25,21 @@ def test_health() -> None:
     }
 
 
-def test_create_evaluation() -> None:
+def test_create_evaluation(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
     response = client.post(
         "/evaluations",
         json={
@@ -28,7 +53,6 @@ def test_create_evaluation() -> None:
                 ],
             },
             "model_name": "llama3",
-            "generated_outputs": ["4"],
             "metrics": ["exact_match"],
         },
     )
@@ -50,6 +74,8 @@ def test_create_evaluation() -> None:
 
 
 def test_create_evaluation_rejects_invalid_request() -> None:
+    client = TestClient(app)
+
     response = client.post(
         "/evaluations",
         json={
@@ -63,35 +89,8 @@ def test_create_evaluation_rejects_invalid_request() -> None:
                 ],
             },
             "model_name": "",
-            "generated_outputs": ["4"],
             "metrics": ["exact_match"],
         },
     )
 
     assert response.status_code == 422
-
-
-def test_create_evaluation_rejects_mismatched_generated_outputs() -> None:
-    response = client.post(
-        "/evaluations",
-        json={
-            "dataset": {
-                "name": "math-test",
-                "items": [
-                    {
-                        "input": "2 + 2",
-                        "expected_output": "4",
-                    },
-                    {
-                        "input": "3 + 3",
-                        "expected_output": "6",
-                    },
-                ],
-            },
-            "model_name": "llama3",
-            "generated_outputs": ["4"],
-            "metrics": ["exact_match"],
-        },
-    )
-
-    assert response.status_code == 400

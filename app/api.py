@@ -10,6 +10,8 @@ from app.models import (
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
+from app.services.model_client import ModelClient
+from app.services.ollama_model_client import OllamaModelClient
 
 
 app = FastAPI(
@@ -18,7 +20,9 @@ app = FastAPI(
 )
 
 
-def create_evaluation_runner() -> EvaluationRunner:
+def create_evaluation_runner(
+    model_client: ModelClient | None = None,
+) -> EvaluationRunner:
     """Create the evaluation runner with registered evaluators."""
 
     registry = EvaluatorRegistry()
@@ -29,7 +33,15 @@ def create_evaluation_runner() -> EvaluationRunner:
 
     engine = EvaluationEngine(registry)
 
-    return EvaluationRunner(engine)
+    if model_client is None:
+        model_client = OllamaModelClient(
+            base_url="http://ollama:11434",
+        )
+
+    return EvaluationRunner(
+        engine=engine,
+        model_client=model_client,
+    )
 
 
 evaluation_runner = create_evaluation_runner()
@@ -54,7 +66,6 @@ def create_evaluation(
         return evaluation_runner.run(
             dataset=request.dataset,
             model_name=request.model_name,
-            generated_outputs=request.generated_outputs,
             metrics=request.metrics,
         )
     except ValueError as exc:
