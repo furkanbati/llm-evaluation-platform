@@ -11,6 +11,7 @@ from app.models import (
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
 
+
 app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,

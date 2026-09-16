@@ -44,3 +44,20 @@ def test_ollama_model_client_generates_outputs(
     )
 
     assert outputs == ["Paris"]
+
+
+@pytest.mark.integration
+def test_ollama_model_client_connects_to_real_ollama() -> None:
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    outputs = client.generate(
+        model_name="llama3",
+        inputs=[
+            "Reply with exactly one word: Paris",
+        ],
+    )
+
+    assert len(outputs) == 1
+    assert outputs[0]
