@@ -52,3 +52,22 @@ def test_save_updates_existing_evaluation() -> None:
     assert result is evaluation
     assert result.model_name == "llama3.2"
 
+def test_list_returns_saved_evaluations() -> None:
+    repository = EvaluationRepository()
+
+    first = create_evaluation_run()
+    second = create_evaluation_run()
+
+    repository.save(first)
+    repository.save(second)
+
+    result = repository.list()
+
+    assert result == [first, second]
+
+def test_list_returns_empty_list_when_repository_is_empty() -> None:
+    repository = EvaluationRepository()
+
+    result = repository.list()
+
+    assert result == []

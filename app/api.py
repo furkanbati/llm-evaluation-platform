@@ -108,6 +108,18 @@ def create_evaluation(
 
 
 @app.get(
+    "/evaluations",
+    response_model=list[EvaluationRun],
+    responses={
+        500: {
+            "model": ErrorResponse,
+        },
+    },
+)
+def list_evaluations() -> list[EvaluationRun]:
+    return evaluation_runner.repository.list()
+
+@app.get(
     "/evaluations/{evaluation_id}",
     response_model=EvaluationRun,
     responses={

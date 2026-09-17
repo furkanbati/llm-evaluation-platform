@@ -18,3 +18,7 @@ class EvaluationRepository:
         """Return an evaluation run by ID, if it exists."""
         return self._evaluations.get(evaluation_id)
 
+    def list(self) -> list[EvaluationRun]:
+        """Return all stored evaluation runs."""
+        return list(self._evaluations.values())
+

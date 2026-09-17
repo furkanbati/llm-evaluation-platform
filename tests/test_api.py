@@ -442,3 +442,70 @@ def test_get_evaluation_response_contains_expected_fields(
         "completed_at",
     }
 
+def test_list_evaluations_returns_saved_evaluations(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    for expected_output in ["4", "4"]:
+        response = client.post(
+            "/evaluations",
+            json={
+                "dataset": {
+                    "name": "math-test",
+                    "items": [
+                        {
+                            "input": "2 + 2",
+                            "expected_output": expected_output,
+                        },
+                    ],
+                },
+                "model_name": "llama3",
+                "metrics": ["exact_match"],
+            },
+        )
+
+        assert response.status_code == 200
+
+    response = client.get("/evaluations")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+    assert data[0]["model_name"] == "llama3"
+    assert data[1]["model_name"] == "llama3"
+
+
+def test_list_evaluations_returns_empty_list(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.get("/evaluations")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
