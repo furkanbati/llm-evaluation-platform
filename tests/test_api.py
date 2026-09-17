@@ -323,7 +323,7 @@ def test_get_evaluation_returns_saved_evaluation(
     monkeypatch.setattr(
         api,
         "evaluation_repository",
-        runner._repository,
+        runner.repository,
     )
 
     client = TestClient(app)
@@ -402,7 +402,7 @@ def test_get_evaluation_response_contains_expected_fields(
     monkeypatch.setattr(
         api,
         "evaluation_repository",
-        runner._repository,
+        runner.repository,
     )
 
     client = TestClient(app)

@@ -122,7 +122,7 @@ def create_evaluation(
 def get_evaluation(
     evaluation_id: UUID,
 ) -> EvaluationRun:
-    evaluation = evaluation_repository.get(evaluation_id)
+    evaluation = evaluation_runner.repository.get(evaluation_id)
 
     if evaluation is None:
         raise HTTPException(

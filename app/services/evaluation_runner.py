@@ -23,6 +23,11 @@ class EvaluationRunner:
         self._model_client = model_client
         self._repository = repository or EvaluationRepository()
 
+    @property
+    def repository(self) -> EvaluationRepository:
+        """Return the repository used by the runner."""
+        return self._repository
+
     def run(
         self,
         dataset: Dataset,
