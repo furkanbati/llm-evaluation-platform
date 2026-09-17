@@ -125,3 +125,16 @@ class HealthResponse(BaseModel):
     )
 
     status: str = Field(min_length=1, max_length=100)
+
+class ErrorResponse(BaseModel):
+    """Standard API error response."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    detail: str = Field(min_length=1, max_length=1_000)
+
+
+

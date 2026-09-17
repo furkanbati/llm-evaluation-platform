@@ -94,3 +94,216 @@ def test_create_evaluation_rejects_invalid_request() -> None:
     )
 
     assert response.status_code == 422
+def test_create_evaluation_returns_400_for_unknown_metric(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["unknown_metric"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "unknown_metric" in response.json()["detail"]
+
+
+def test_create_evaluation_returns_500_for_unexpected_error(
+    monkeypatch,
+) -> None:
+    class FailingRunner:
+        def run(
+            self,
+            dataset,
+            model_name,
+            metrics,
+        ):
+            raise RuntimeError("unexpected failure")
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        FailingRunner(),
+    )
+
+    client = TestClient(
+        app,
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.status_code == 500
+
+def test_create_evaluation_returns_error_detail_for_unexpected_error(
+    monkeypatch,
+) -> None:
+    class FailingRunner:
+        def run(
+            self,
+            dataset,
+            model_name,
+            metrics,
+        ):
+            raise RuntimeError("unexpected failure")
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        FailingRunner(),
+    )
+
+    client = TestClient(
+        app,
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.status_code == 500
+
+def test_create_evaluation_hides_internal_error_details(
+    monkeypatch,
+) -> None:
+    class FailingRunner:
+        def run(
+            self,
+            dataset,
+            model_name,
+            metrics,
+        ):
+            raise RuntimeError("database password leaked")
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        FailingRunner(),
+    )
+
+    client = TestClient(
+        app,
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.status_code == 500
+
+    data = response.json()
+
+    assert data["detail"] == "Internal server error"
+
+def test_create_evaluation_returns_json_for_internal_errors(
+    monkeypatch,
+) -> None:
+    class FailingRunner:
+        def run(
+            self,
+            dataset,
+            model_name,
+            metrics,
+        ):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        FailingRunner(),
+    )
+
+    client = TestClient(
+        app,
+        raise_server_exceptions=False,
+    )
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith(
+        "application/json"
+    )
+    assert response.json() == {
+        "detail": "Internal server error",
+    }

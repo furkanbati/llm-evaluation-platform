@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.config import APP_NAME, APP_VERSION, OLLAMA_BASE_URL
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
+    ErrorResponse,
     EvaluationRequest,
     EvaluationRun,
     HealthResponse,
@@ -18,6 +20,19 @@ app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,
 )
+
+
+@app.exception_handler(Exception)
+def handle_unexpected_exception(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+        },
+    )
 
 
 def create_evaluation_runner(
@@ -58,6 +73,14 @@ def health() -> HealthResponse:
 @app.post(
     "/evaluations",
     response_model=EvaluationRun,
+    responses={
+        400: {
+            "model": ErrorResponse,
+        },
+        500: {
+            "model": ErrorResponse,
+        },
+    },
 )
 def create_evaluation(
     request: EvaluationRequest,
@@ -73,3 +96,4 @@ def create_evaluation(
             status_code=400,
             detail=str(exc),
         ) from exc
+
