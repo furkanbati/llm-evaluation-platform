@@ -29,6 +29,8 @@ class EvaluationRunner:
     ) -> EvaluationRun:
         """Evaluate all dataset items and return an evaluation run."""
 
+        created_at = datetime.now(timezone.utc)
+
         if generated_outputs is None:
             if self._model_client is None:
                 raise ValueError(
@@ -71,5 +73,6 @@ class EvaluationRunner:
             model_name=model_name,
             status=EvaluationStatus.COMPLETED,
             results=results,
+            created_at=created_at,
             completed_at=datetime.now(timezone.utc),
         )

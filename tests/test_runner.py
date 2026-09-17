@@ -153,3 +153,23 @@ def test_runner_raises_error_when_output_count_mismatch():
             ],
             metrics=["exact_match"],
         )
+
+
+def test_runner_sets_created_at_before_completed_at():
+    runner = create_runner()
+
+    dataset = create_dataset()
+
+    run = runner.run(
+        dataset=dataset,
+        model_name="test-model",
+        generated_outputs=[
+            "Paris",
+            "Ankara",
+        ],
+        metrics=["exact_match"],
+    )
+
+    assert run.completed_at is not None
+    assert run.created_at <= run.completed_at
+
