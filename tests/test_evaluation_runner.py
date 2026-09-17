@@ -11,6 +11,7 @@ from app.services.evaluation_runner import EvaluationRunner
 from app.services.model_client import ModelClient
 from app.storage.evaluation_repository import EvaluationRepository
 
+
 class FakeModelClient(ModelClient):
     def generate(
         self,
@@ -39,9 +40,20 @@ class FailingEvaluationEngine:
         raise RuntimeError("Evaluation failed")
 
 
+class RecordingEvaluationRepository(EvaluationRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.statuses: list[EvaluationStatus] = []
+
+    def save(self, evaluation):
+        self.statuses.append(evaluation.status)
+        return super().save(evaluation)
+
+
 def create_runner(
     model_client: ModelClient,
     engine: EvaluationEngine | FailingEvaluationEngine | None = None,
+    repository: EvaluationRepository | None = None,
 ) -> EvaluationRunner:
     if engine is None:
         registry = EvaluatorRegistry()
@@ -55,6 +67,7 @@ def create_runner(
     return EvaluationRunner(
         engine=engine,
         model_client=model_client,
+        repository=repository,
     )
 
 
@@ -144,6 +157,7 @@ def test_runner_marks_evaluation_as_failed_when_engine_fails() -> None:
     assert result.created_at <= result.completed_at
     assert result.results == []
 
+
 def test_runner_saves_completed_evaluation_to_repository() -> None:
     runner = create_runner(
         model_client=FakeModelClient(),
@@ -197,15 +211,11 @@ def test_runner_saves_failed_evaluation_to_repository() -> None:
     assert saved is result
     assert saved.status == EvaluationStatus.FAILED
 
+
 def test_runner_uses_provided_repository() -> None:
     repository = EvaluationRepository()
 
     runner = create_runner(
-        model_client=FakeModelClient(),
-    )
-
-    runner = EvaluationRunner(
-        engine=runner._engine,
         model_client=FakeModelClient(),
         repository=repository,
     )
@@ -228,3 +238,31 @@ def test_runner_uses_provided_repository() -> None:
 
     assert repository.get(result.id) is result
 
+
+def test_runner_transitions_from_pending_to_running() -> None:
+    repository = RecordingEvaluationRepository()
+
+    runner = create_runner(
+        model_client=FakeModelClient(),
+        repository=repository,
+    )
+
+    dataset = Dataset(
+        name="capital-test",
+        items=[
+            DatasetItem(
+                input="What is the capital of France?",
+                expected_output="Paris",
+            ),
+        ],
+    )
+
+    result = runner.run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert repository.statuses[0] == EvaluationStatus.PENDING
+    assert repository.statuses[1] == EvaluationStatus.RUNNING
+    assert result.status == EvaluationStatus.COMPLETED

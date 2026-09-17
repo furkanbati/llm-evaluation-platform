@@ -37,14 +37,16 @@ class EvaluationRunner:
     ) -> EvaluationRun:
         """Evaluate all dataset items and return an evaluation run."""
 
-        created_at = datetime.now(timezone.utc)
-
         evaluation_run = EvaluationRun(
             dataset_id=dataset.id,
             model_name=model_name,
-            status=EvaluationStatus.RUNNING,
-            created_at=created_at,
+            status=EvaluationStatus.PENDING,
         )
+
+        self._repository.save(evaluation_run)
+
+        evaluation_run.status = EvaluationStatus.RUNNING
+        self._repository.save(evaluation_run)
 
         try:
             if generated_outputs is None:
