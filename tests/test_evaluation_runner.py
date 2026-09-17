@@ -9,7 +9,7 @@ from app.models import (
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
 from app.services.model_client import ModelClient
-
+from app.storage.evaluation_repository import EvaluationRepository
 
 class FakeModelClient(ModelClient):
     def generate(
@@ -144,4 +144,87 @@ def test_runner_marks_evaluation_as_failed_when_engine_fails() -> None:
     assert result.created_at <= result.completed_at
     assert result.results == []
 
+def test_runner_saves_completed_evaluation_to_repository() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    dataset = Dataset(
+        name="capital-test",
+        items=[
+            DatasetItem(
+                input="What is the capital of France?",
+                expected_output="Paris",
+            ),
+        ],
+    )
+
+    result = runner.run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    saved = runner._repository.get(result.id)
+
+    assert saved is result
+    assert saved.status == EvaluationStatus.COMPLETED
+
+
+def test_runner_saves_failed_evaluation_to_repository() -> None:
+    runner = create_runner(
+        model_client=FailingModelClient(),
+    )
+
+    dataset = Dataset(
+        name="capital-test",
+        items=[
+            DatasetItem(
+                input="What is the capital of France?",
+                expected_output="Paris",
+            ),
+        ],
+    )
+
+    result = runner.run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    saved = runner._repository.get(result.id)
+
+    assert saved is result
+    assert saved.status == EvaluationStatus.FAILED
+
+def test_runner_uses_provided_repository() -> None:
+    repository = EvaluationRepository()
+
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    runner = EvaluationRunner(
+        engine=runner._engine,
+        model_client=FakeModelClient(),
+        repository=repository,
+    )
+
+    dataset = Dataset(
+        name="capital-test",
+        items=[
+            DatasetItem(
+                input="What is the capital of France?",
+                expected_output="Paris",
+            ),
+        ],
+    )
+
+    result = runner.run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert repository.get(result.id) is result
 
