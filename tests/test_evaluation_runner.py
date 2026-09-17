@@ -143,3 +143,5 @@ def test_runner_marks_evaluation_as_failed_when_engine_fails() -> None:
     assert result.completed_at is not None
     assert result.created_at <= result.completed_at
     assert result.results == []
+
+

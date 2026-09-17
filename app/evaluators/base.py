@@ -12,3 +12,6 @@ class Evaluator(ABC):
         generated_output: str,
     ) -> MetricResult:
         pass
+
+
+        

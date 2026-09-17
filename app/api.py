@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -14,6 +16,7 @@ from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
+from app.storage.evaluation_repository import EvaluationRepository
 
 
 app = FastAPI(
@@ -37,6 +40,7 @@ def handle_unexpected_exception(
 
 def create_evaluation_runner(
     model_client: ModelClient | None = None,
+    repository: EvaluationRepository | None = None,
 ) -> EvaluationRunner:
     """Create the evaluation runner with registered evaluators."""
 
@@ -56,10 +60,15 @@ def create_evaluation_runner(
     return EvaluationRunner(
         engine=engine,
         model_client=model_client,
+        repository=repository,
     )
 
 
-evaluation_runner = create_evaluation_runner()
+evaluation_repository = EvaluationRepository()
+
+evaluation_runner = create_evaluation_runner(
+    repository=evaluation_repository,
+)
 
 
 @app.get(
@@ -96,4 +105,30 @@ def create_evaluation(
             status_code=400,
             detail=str(exc),
         ) from exc
+
+
+@app.get(
+    "/evaluations/{evaluation_id}",
+    response_model=EvaluationRun,
+    responses={
+        404: {
+            "model": ErrorResponse,
+        },
+        500: {
+            "model": ErrorResponse,
+        },
+    },
+)
+def get_evaluation(
+    evaluation_id: UUID,
+) -> EvaluationRun:
+    evaluation = evaluation_repository.get(evaluation_id)
+
+    if evaluation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Evaluation not found",
+        )
+
+    return evaluation
 

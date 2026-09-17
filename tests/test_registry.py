@@ -67,3 +67,6 @@ def test_registry_lists_registered_metrics() -> None:
     assert registry.available_metrics() == [
         "exact_match"
     ]
+
+
+    

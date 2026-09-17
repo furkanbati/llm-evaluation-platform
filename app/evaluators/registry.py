@@ -38,3 +38,6 @@ class EvaluatorRegistry:
         """Return all registered metric names."""
 
         return sorted(self._evaluators.keys())
+
+
+        

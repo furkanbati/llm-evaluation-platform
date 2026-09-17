@@ -7,6 +7,7 @@ from app.models import (
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.model_client import ModelClient
+from app.storage.evaluation_repository import EvaluationRepository
 
 
 class EvaluationRunner:
@@ -16,9 +17,11 @@ class EvaluationRunner:
         self,
         engine: EvaluationEngine,
         model_client: ModelClient | None = None,
+        repository: EvaluationRepository | None = None,
     ) -> None:
         self._engine = engine
         self._model_client = model_client
+        self._repository = repository or EvaluationRepository()
 
     def run(
         self,
@@ -80,7 +83,7 @@ class EvaluationRunner:
             evaluation_run.status = EvaluationStatus.COMPLETED
             evaluation_run.completed_at = datetime.now(timezone.utc)
 
-            return evaluation_run
+            return self._repository.save(evaluation_run)
 
         except ValueError:
             raise
@@ -89,4 +92,5 @@ class EvaluationRunner:
             evaluation_run.status = EvaluationStatus.FAILED
             evaluation_run.completed_at = datetime.now(timezone.utc)
 
-            return evaluation_run
+            return self._repository.save(evaluation_run)
+

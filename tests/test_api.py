@@ -307,3 +307,138 @@ def test_create_evaluation_returns_json_for_internal_errors(
     assert response.json() == {
         "detail": "Internal server error",
     }
+
+def test_get_evaluation_returns_saved_evaluation(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+    monkeypatch.setattr(
+        api,
+        "evaluation_repository",
+        runner._repository,
+    )
+
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert create_response.status_code == 200
+
+    evaluation_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/evaluations/{evaluation_id}",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["id"] == evaluation_id
+    assert data["model_name"] == "llama3"
+    assert data["status"] == "completed"
+    assert len(data["results"]) == 1
+
+
+def test_get_evaluation_returns_404_for_unknown_id() -> None:
+    client = TestClient(app)
+
+    evaluation_id = "00000000-0000-0000-0000-000000000000"
+
+    response = client.get(
+        f"/evaluations/{evaluation_id}",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Evaluation not found",
+    }
+
+def test_get_evaluation_rejects_invalid_uuid() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations/not-a-uuid",
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_evaluation_response_contains_expected_fields(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+    monkeypatch.setattr(
+        api,
+        "evaluation_repository",
+        runner._repository,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    evaluation_id = response.json()["id"]
+
+    get_response = client.get(
+        f"/evaluations/{evaluation_id}",
+    )
+
+    data = get_response.json()
+
+    assert set(data) == {
+        "id",
+        "dataset_id",
+        "model_name",
+        "status",
+        "results",
+        "created_at",
+        "completed_at",
+    }
+
