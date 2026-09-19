@@ -14,6 +14,9 @@ from app.models import (
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
+from app.services.evaluation_summary_service import (
+    EvaluationSummaryService,
+)
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
 from app.storage.evaluation_repository import EvaluationRepository
@@ -45,6 +48,7 @@ def create_evaluation_runner(
     """Create the evaluation runner with registered evaluators."""
 
     registry = EvaluatorRegistry()
+
     registry.register(
         "exact_match",
         ExactMatchEvaluator(),
@@ -70,13 +74,19 @@ evaluation_runner = create_evaluation_runner(
     repository=evaluation_repository,
 )
 
+evaluation_summary_service = (
+    EvaluationSummaryService()
+)
+
 
 @app.get(
     "/health",
     response_model=HealthResponse,
 )
 def health() -> HealthResponse:
-    return HealthResponse(status="ready")
+    return HealthResponse(
+        status="ready",
+    )
 
 
 @app.post(
@@ -119,6 +129,7 @@ def create_evaluation(
 def list_evaluations() -> list[EvaluationRun]:
     return evaluation_runner.repository.list()
 
+
 @app.get(
     "/evaluations/{evaluation_id}",
     response_model=EvaluationRun,
@@ -134,7 +145,9 @@ def list_evaluations() -> list[EvaluationRun]:
 def get_evaluation(
     evaluation_id: UUID,
 ) -> EvaluationRun:
-    evaluation = evaluation_runner.repository.get(evaluation_id)
+    evaluation = evaluation_runner.repository.get(
+        evaluation_id,
+    )
 
     if evaluation is None:
         raise HTTPException(
@@ -143,4 +156,30 @@ def get_evaluation(
         )
 
     return evaluation
+
+
+@app.get(
+    "/evaluations/{evaluation_id}/summary",
+    responses={
+        404: {
+            "model": ErrorResponse,
+        },
+    },
+)
+def get_evaluation_summary(
+    evaluation_id: UUID,
+) -> dict:
+    evaluation = evaluation_runner.repository.get(
+        evaluation_id,
+    )
+
+    if evaluation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Evaluation not found",
+        )
+
+    return evaluation_summary_service.build(
+        evaluation,
+    )
 

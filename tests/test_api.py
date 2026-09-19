@@ -508,4 +508,69 @@ def test_list_evaluations_returns_empty_list(
     assert response.status_code == 200
     assert response.json() == []
 
+def test_get_evaluation_summary_returns_statistics(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+    monkeypatch.setattr(
+        api,
+        "evaluation_repository",
+        runner.repository,
+    )
+
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    evaluation_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/evaluations/{evaluation_id}/summary",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total_items"] == 1
+    assert data["passed_items"] == 1
+    assert data["failed_items"] == 0
+    assert data["average_score"] == 1.0
+    assert data["success_rate"] == 1.0
+
+
+def test_get_evaluation_summary_returns_404_for_unknown_id() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations/00000000-0000-0000-0000-000000000000/summary",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Evaluation not found",
+    }
 
