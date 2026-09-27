@@ -128,14 +128,19 @@ def create_evaluation(
         },
     },
 )
+
 def list_evaluations(
     status: EvaluationStatus | None = None,
     model_name: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[EvaluationRun]:
-    return evaluation_runner.repository.list(
+    evaluations = evaluation_runner.repository.list(
         status=status,
         model_name=model_name,
     )
+
+    return evaluations[offset : offset + limit]
 
 
 @app.get(

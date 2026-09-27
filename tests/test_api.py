@@ -765,4 +765,120 @@ def test_list_evaluations_rejects_invalid_status() -> None:
 
     assert response.status_code == 422
 
+def test_list_evaluations_supports_limit(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    for model_name in ["llama3", "llama3.2", "llama3.3"]:
+        runner.repository.save(
+            EvaluationRun(
+                dataset_id=uuid4(),
+                model_name=model_name,
+            )
+        )
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?limit=2",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+    assert data[0]["model_name"] == "llama3"
+    assert data[1]["model_name"] == "llama3.2"
+
+
+def test_list_evaluations_supports_offset(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    for model_name in ["llama3", "llama3.2", "llama3.3"]:
+        runner.repository.save(
+            EvaluationRun(
+                dataset_id=uuid4(),
+                model_name=model_name,
+            )
+        )
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?offset=1",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 2
+    assert data[0]["model_name"] == "llama3.2"
+    assert data[1]["model_name"] == "llama3.3"
+
+def test_list_evaluations_applies_filters_before_pagination(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    for model_name, status in [
+        ("llama3", "completed"),
+        ("llama3", "completed"),
+        ("llama3", "failed"),
+        ("llama3.2", "completed"),
+    ]:
+        runner.repository.save(
+            EvaluationRun(
+                dataset_id=uuid4(),
+                model_name=model_name,
+                status=status,
+            )
+        )
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations"
+        "?status=completed"
+        "&model_name=llama3"
+        "&limit=1"
+        "&offset=1",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["model_name"] == "llama3"
+    assert data[0]["status"] == "completed"
+
 
