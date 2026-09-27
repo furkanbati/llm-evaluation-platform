@@ -44,14 +44,11 @@ def test_summary_calculates_basic_statistics() -> None:
         evaluation,
     )
 
-    assert summary["total_items"] == 3
-    assert summary["passed_items"] == 1
-    assert summary["failed_items"] == 2
-    assert summary["average_score"] == 0.5
-    assert summary["success_rate"] == (
-        1 / 3
-    )
-
+    assert summary.total_items == 3
+    assert summary.passed_items == 1
+    assert summary.failed_items == 2
+    assert summary.average_score == 0.5
+    assert summary.success_rate == (1 / 3)
 
 def test_summary_handles_empty_results() -> None:
     from app.services.evaluation_summary_service import (
@@ -68,10 +65,58 @@ def test_summary_handles_empty_results() -> None:
         evaluation,
     )
 
-    assert summary["total_items"] == 0
-    assert summary["passed_items"] == 0
-    assert summary["failed_items"] == 0
-    assert summary["average_score"] == 0.0
-    assert summary["success_rate"] == 0.0
+    assert summary.total_items == 0
+    assert summary.passed_items == 0
+    assert summary.failed_items == 0
+    assert summary.average_score == 0
+    assert summary.success_rate == 0
 
+
+def test_summary_calculates_metric_statistics() -> None:
+    from app.services.evaluation_summary_service import (
+        EvaluationSummaryService,
+    )
+
+    evaluation = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        results=[
+            EvaluationResult(
+                item_id=uuid4(),
+                generated_output="output",
+                metrics=[
+                    MetricResult(
+                        metric_name="exact_match",
+                        score=1.0,
+                        passed=True,
+                    )
+                ],
+                overall_score=1.0,
+            ),
+            EvaluationResult(
+                item_id=uuid4(),
+                generated_output="output",
+                metrics=[
+                    MetricResult(
+                        metric_name="exact_match",
+                        score=0.0,
+                        passed=False,
+                    )
+                ],
+                overall_score=0.0,
+            ),
+        ],
+    )
+
+    summary = EvaluationSummaryService().build(
+        evaluation,
+    )
+
+    assert summary.metrics[
+        "exact_match"
+    ].average_score == 0.5
+
+    assert summary.metrics[
+        "exact_match"
+    ].pass_rate == 0.5
 

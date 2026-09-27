@@ -136,5 +136,47 @@ class ErrorResponse(BaseModel):
 
     detail: str = Field(min_length=1, max_length=1_000)
 
+class MetricSummary(BaseModel):
+    """Aggregated statistics for a metric."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    average_score: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    pass_rate: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+
+
+
+class EvaluationSummary(BaseModel):
+    """Aggregated statistics for an evaluation run."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    total_items: int = Field(ge=0)
+    passed_items: int = Field(ge=0)
+    failed_items: int = Field(ge=0)
+    average_score: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    success_rate: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    metrics: dict[str, MetricSummary] = Field(
+        default_factory=dict,
+    )
+
 
 

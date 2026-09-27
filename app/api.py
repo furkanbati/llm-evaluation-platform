@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.config import APP_NAME, APP_VERSION, OLLAMA_BASE_URL
@@ -10,6 +10,8 @@ from app.models import (
     ErrorResponse,
     EvaluationRequest,
     EvaluationRun,
+    EvaluationStatus,
+    EvaluationSummary,
     HealthResponse,
 )
 from app.services.evaluation_engine import EvaluationEngine
@@ -126,8 +128,14 @@ def create_evaluation(
         },
     },
 )
-def list_evaluations() -> list[EvaluationRun]:
-    return evaluation_runner.repository.list()
+def list_evaluations(
+    status: EvaluationStatus | None = None,
+    model_name: str | None = None,
+) -> list[EvaluationRun]:
+    return evaluation_runner.repository.list(
+        status=status,
+        model_name=model_name,
+    )
 
 
 @app.get(
@@ -160,6 +168,7 @@ def get_evaluation(
 
 @app.get(
     "/evaluations/{evaluation_id}/summary",
+    response_model=EvaluationSummary,
     responses={
         404: {
             "model": ErrorResponse,
@@ -168,7 +177,7 @@ def get_evaluation(
 )
 def get_evaluation_summary(
     evaluation_id: UUID,
-) -> dict:
+) -> EvaluationSummary:
     evaluation = evaluation_runner.repository.get(
         evaluation_id,
     )
@@ -182,4 +191,33 @@ def get_evaluation_summary(
     return evaluation_summary_service.build(
         evaluation,
     )
+
+
+@app.delete(
+    "/evaluations/{evaluation_id}",
+    status_code=204,
+    responses={
+        404: {
+            "model": ErrorResponse,
+        },
+    },
+)
+def delete_evaluation(
+    evaluation_id: UUID,
+) -> Response:
+    deleted = evaluation_repository.delete(
+        evaluation_id,
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Evaluation not found",
+        )
+
+    return Response(
+        status_code=204,
+    )
+
+
 

@@ -1,25 +1,30 @@
-from app.models import EvaluationRun
+from app.models import (
+    EvaluationRun,
+    EvaluationSummary,
+    MetricSummary,
+)
 
 
 class EvaluationSummaryService:
-    """Build summary statistics from evaluation runs."""
+    """Builds aggregated statistics for evaluation runs."""
 
     def build(
         self,
-        evaluation_run: EvaluationRun,
-    ) -> dict:
-        results = evaluation_run.results
-
-        if not results:
-            return {
-                "total_items": 0,
-                "passed_items": 0,
-                "failed_items": 0,
-                "average_score": 0.0,
-                "success_rate": 0.0,
-            }
+        evaluation: EvaluationRun,
+    ) -> EvaluationSummary:
+        results = evaluation.results
 
         total_items = len(results)
+
+        if total_items == 0:
+            return EvaluationSummary(
+                total_items=0,
+                passed_items=0,
+                failed_items=0,
+                average_score=0.0,
+                success_rate=0.0,
+                metrics={},
+            )
 
         passed_items = sum(
             1
@@ -30,7 +35,9 @@ class EvaluationSummaryService:
             )
         )
 
-        failed_items = total_items - passed_items
+        failed_items = (
+            total_items - passed_items
+        )
 
         average_score = (
             sum(
@@ -41,15 +48,45 @@ class EvaluationSummaryService:
         )
 
         success_rate = (
-            passed_items
-            / total_items
+            passed_items / total_items
         )
 
-        return {
-            "total_items": total_items,
-            "passed_items": passed_items,
-            "failed_items": failed_items,
-            "average_score": average_score,
-            "success_rate": success_rate,
-        }
+        metric_scores: dict[str, list[float]] = {}
+        metric_passes: dict[str, list[bool]] = {}
+
+        for result in results:
+            for metric in result.metrics:
+                metric_scores.setdefault(
+                    metric.metric_name,
+                    [],
+                ).append(metric.score)
+
+                metric_passes.setdefault(
+                    metric.metric_name,
+                    [],
+                ).append(metric.passed)
+
+        metrics = {}
+
+        for metric_name in metric_scores:
+            scores = metric_scores[metric_name]
+            passes = metric_passes[metric_name]
+
+            metrics[metric_name] = MetricSummary(
+                average_score=(
+                    sum(scores) / len(scores)
+                ),
+                pass_rate=(
+                    sum(passes) / len(passes)
+                ),
+            )
+
+        return EvaluationSummary(
+            total_items=total_items,
+            passed_items=passed_items,
+            failed_items=failed_items,
+            average_score=average_score,
+            success_rate=success_rate,
+            metrics=metrics,
+        )
 

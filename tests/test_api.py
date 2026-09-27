@@ -1,9 +1,21 @@
 from fastapi.testclient import TestClient
-
 import app.api as api
 from app.api import app, create_evaluation_runner
 from app.services.model_client import ModelClient
 
+from uuid import UUID, uuid4
+
+from app.models import (
+    ErrorResponse,
+    EvaluationRequest,
+    EvaluationRun,
+    HealthResponse,
+)
+
+from app.api import (
+    app,
+    evaluation_repository,
+)
 
 class FakeModelClient(ModelClient):
     def generate(
@@ -573,4 +585,184 @@ def test_get_evaluation_summary_returns_404_for_unknown_id() -> None:
     assert response.json() == {
         "detail": "Evaluation not found",
     }
+
+def test_delete_evaluation_removes_saved_evaluation() -> None:
+    from uuid import uuid4
+
+    evaluation = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+    )
+
+    evaluation_repository.save(
+        evaluation,
+    )
+
+    client = TestClient(app)
+
+    response = client.delete(
+        f"/evaluations/{evaluation.id}",
+    )
+
+    assert response.status_code == 204
+
+    assert (
+        evaluation_repository.get(
+            evaluation.id,
+        )
+        is None
+    )
+
+
+def test_delete_evaluation_returns_404_for_unknown_id() -> None:
+    client = TestClient(app)
+
+    response = client.delete(
+        f"/evaluations/{uuid4()}",
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Evaluation not found",
+    }
+
+def test_list_evaluations_filters_by_status(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    completed = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status="completed",
+    )
+    failed = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status="failed",
+    )
+
+    runner.repository.save(completed)
+    runner.repository.save(failed)
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?status=completed",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["id"] == str(completed.id)
+    assert data[0]["status"] == "completed"
+
+
+def test_list_evaluations_filters_by_model_name(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    llama3 = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+    )
+    llama32 = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3.2",
+    )
+
+    runner.repository.save(llama3)
+    runner.repository.save(llama32)
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?model_name=llama3",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["id"] == str(llama3.id)
+    assert data[0]["model_name"] == "llama3"
+
+
+def test_list_evaluations_filters_by_status_and_model_name(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    matching = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status="completed",
+    )
+    wrong_status = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status="failed",
+    )
+    wrong_model = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3.2",
+        status="completed",
+    )
+
+    runner.repository.save(matching)
+    runner.repository.save(wrong_status)
+    runner.repository.save(wrong_model)
+
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?status=completed&model_name=llama3",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["id"] == str(matching.id)
+
+
+def test_list_evaluations_rejects_invalid_status() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/evaluations?status=invalid",
+    )
+
+    assert response.status_code == 422
+
 

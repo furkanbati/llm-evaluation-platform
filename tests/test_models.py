@@ -11,6 +11,8 @@ from app.models import (
     EvaluationRun,
     EvaluationStatus,
     MetricResult,
+    EvaluationSummary,
+    MetricSummary,
 )
 
 
@@ -243,3 +245,31 @@ def test_models_reject_invalid_types() -> None:
             score="not-a-score",
             passed=True,
         )
+
+
+
+def test_evaluation_summary_accepts_valid_values() -> None:
+    summary = EvaluationSummary(
+        total_items=10,
+        passed_items=8,
+        failed_items=2,
+        average_score=0.8,
+        success_rate=0.8,
+    )
+
+    assert summary.total_items == 10
+    assert summary.passed_items == 8
+    assert summary.failed_items == 2
+    assert summary.average_score == 0.8
+    assert summary.success_rate == 0.8
+
+def test_metric_summary_accepts_valid_values() -> None:
+    summary = MetricSummary(
+        average_score=0.8,
+        pass_rate=0.6,
+    )
+
+    assert summary.average_score == 0.8
+    assert summary.pass_rate == 0.6
+
+
