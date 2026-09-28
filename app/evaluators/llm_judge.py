@@ -1,3 +1,4 @@
+
 from app.models import MetricResult
 from app.services.model_client import ModelClient
 
@@ -41,14 +42,14 @@ class LLMJudgeEvaluator(Evaluator):
     ) -> MetricResult:
         normalized = judgement.strip().upper()
 
-        if normalized == "YES":
+        if normalized.startswith("YES"):
             return MetricResult(
                 metric_name="llm_judge",
                 score=1.0,
                 passed=True,
             )
 
-        if normalized == "NO":
+        if normalized.startswith("NO"):
             return MetricResult(
                 metric_name="llm_judge",
                 score=0.0,

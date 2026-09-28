@@ -23,6 +23,16 @@ class FakeModelClient(ModelClient):
     ) -> list[str]:
         return ["4"]
 
+class FakeEvaluationWithJudgeModelClient(ModelClient):
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+    ) -> list[str]:
+        if "Respond with only YES or NO." in inputs[0]:
+            return ["YES"]
+
+        return ["4"]
 
 def test_health() -> None:
     client = TestClient(app)
@@ -984,4 +994,49 @@ def test_create_evaluation_runner_registers_llm_judge() -> None:
         runner._engine._registry.get("llm_judge")
         is not None
     )
+
+def test_create_evaluation_supports_llm_judge_metric(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeEvaluationWithJudgeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["llm_judge"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "completed"
+    assert len(data["results"]) == 1
+
+    metric = data["results"][0]["metrics"][0]
+
+    assert metric["metric_name"] == "llm_judge"
+    assert metric["score"] == 1.0
+    assert metric["passed"] is True
 
