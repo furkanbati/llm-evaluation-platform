@@ -11,3 +11,8 @@ OLLAMA_BASE_URL = os.getenv(
 APP_NAME = "LLM Evaluation Platform"
 APP_VERSION = "1.0.0"
 
+JUDGE_MODEL_NAME = os.getenv(
+    "JUDGE_MODEL_NAME",
+    "llama3",
+)
+

@@ -3,9 +3,16 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.config import APP_NAME, APP_VERSION, OLLAMA_BASE_URL
+from app.config import (
+    APP_NAME,
+    APP_VERSION,
+    JUDGE_MODEL_NAME,
+    OLLAMA_BASE_URL,
+)
 from app.evaluators.exact_match import ExactMatchEvaluator
+from app.evaluators.llm_judge import LLMJudgeEvaluator
 from app.evaluators.registry import EvaluatorRegistry
+from app.evaluators.similarity import SimilarityEvaluator
 from app.models import (
     ErrorResponse,
     EvaluationRequest,
@@ -22,7 +29,7 @@ from app.services.evaluation_summary_service import (
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
 from app.storage.evaluation_repository import EvaluationRepository
-from app.evaluators.similarity import SimilarityEvaluator
+
 
 app = FastAPI(
     title=APP_NAME,
@@ -65,12 +72,20 @@ def create_evaluation_runner(
         SimilarityEvaluator(),
     )
 
-    engine = EvaluationEngine(registry)
-
     if model_client is None:
         model_client = OllamaModelClient(
             base_url=OLLAMA_BASE_URL,
         )
+
+    registry.register(
+        "llm_judge",
+        LLMJudgeEvaluator(
+            model_client=model_client,
+            model_name=JUDGE_MODEL_NAME,
+        ),
+    )
+
+    engine = EvaluationEngine(registry)
 
     return EvaluationRunner(
         engine=engine,
@@ -99,25 +114,19 @@ def health() -> HealthResponse:
         status="ready",
     )
 
+
 @app.get(
     "/metrics",
 )
 def list_metrics() -> dict[str, list[str]]:
-    registry = EvaluatorRegistry()
-
-    registry.register(
-        "exact_match",
-        ExactMatchEvaluator(),
-    )
-
-    registry.register(
-        "similarity",
-        SimilarityEvaluator(),
-    )
-
     return {
-        "metrics": registry.available_metrics(),
+        "metrics": [
+            "exact_match",
+            "similarity",
+            "llm_judge",
+        ],
     }
+
 
 @app.post(
     "/evaluations",
@@ -156,7 +165,6 @@ def create_evaluation(
         },
     },
 )
-
 def list_evaluations(
     status: EvaluationStatus | None = None,
     model_name: str | None = None,
@@ -251,6 +259,4 @@ def delete_evaluation(
     return Response(
         status_code=204,
     )
-
-
 

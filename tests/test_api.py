@@ -1,21 +1,19 @@
-from fastapi.testclient import TestClient
+
+from uuid import uuid4
+
 import app.api as api
-from app.api import app, create_evaluation_runner
-from app.services.model_client import ModelClient
-
-from uuid import UUID, uuid4
-
-from app.models import (
-    ErrorResponse,
-    EvaluationRequest,
-    EvaluationRun,
-    HealthResponse,
-)
+from fastapi.testclient import TestClient
 
 from app.api import (
     app,
+    create_evaluation_runner,
     evaluation_repository,
 )
+from app.models import (
+    EvaluationRun,
+)
+from app.services.model_client import ModelClient
+
 
 class FakeModelClient(ModelClient):
     def generate(
@@ -106,6 +104,8 @@ def test_create_evaluation_rejects_invalid_request() -> None:
     )
 
     assert response.status_code == 422
+
+
 def test_create_evaluation_returns_400_for_unknown_metric(
     monkeypatch,
 ) -> None:
@@ -184,6 +184,7 @@ def test_create_evaluation_returns_500_for_unexpected_error(
 
     assert response.status_code == 500
 
+
 def test_create_evaluation_returns_error_detail_for_unexpected_error(
     monkeypatch,
 ) -> None:
@@ -225,6 +226,7 @@ def test_create_evaluation_returns_error_detail_for_unexpected_error(
     )
 
     assert response.status_code == 500
+
 
 def test_create_evaluation_hides_internal_error_details(
     monkeypatch,
@@ -271,6 +273,7 @@ def test_create_evaluation_hides_internal_error_details(
     data = response.json()
 
     assert data["detail"] == "Internal server error"
+
 
 def test_create_evaluation_returns_json_for_internal_errors(
     monkeypatch,
@@ -319,6 +322,7 @@ def test_create_evaluation_returns_json_for_internal_errors(
     assert response.json() == {
         "detail": "Internal server error",
     }
+
 
 def test_get_evaluation_returns_saved_evaluation(
     monkeypatch,
@@ -388,6 +392,7 @@ def test_get_evaluation_returns_404_for_unknown_id() -> None:
     assert response.json() == {
         "detail": "Evaluation not found",
     }
+
 
 def test_get_evaluation_rejects_invalid_uuid() -> None:
     client = TestClient(app)
@@ -520,6 +525,7 @@ def test_list_evaluations_returns_empty_list(
     assert response.status_code == 200
     assert response.json() == []
 
+
 def test_get_evaluation_summary_returns_statistics(
     monkeypatch,
 ) -> None:
@@ -586,9 +592,8 @@ def test_get_evaluation_summary_returns_404_for_unknown_id() -> None:
         "detail": "Evaluation not found",
     }
 
-def test_delete_evaluation_removes_saved_evaluation() -> None:
-    from uuid import uuid4
 
+def test_delete_evaluation_removes_saved_evaluation() -> None:
     evaluation = EvaluationRun(
         dataset_id=uuid4(),
         model_name="llama3",
@@ -626,6 +631,7 @@ def test_delete_evaluation_returns_404_for_unknown_id() -> None:
     assert response.json() == {
         "detail": "Evaluation not found",
     }
+
 
 def test_list_evaluations_filters_by_status(
     monkeypatch,
@@ -745,7 +751,9 @@ def test_list_evaluations_filters_by_status_and_model_name(
     client = TestClient(app)
 
     response = client.get(
-        "/evaluations?status=completed&model_name=llama3",
+        "/evaluations"
+        "?status=completed"
+        "&model_name=llama3",
     )
 
     assert response.status_code == 200
@@ -764,6 +772,7 @@ def test_list_evaluations_rejects_invalid_status() -> None:
     )
 
     assert response.status_code == 422
+
 
 def test_list_evaluations_supports_limit(
     monkeypatch,
@@ -836,6 +845,7 @@ def test_list_evaluations_supports_offset(
     assert data[0]["model_name"] == "llama3.2"
     assert data[1]["model_name"] == "llama3.3"
 
+
 def test_list_evaluations_applies_filters_before_pagination(
     monkeypatch,
 ) -> None:
@@ -881,6 +891,7 @@ def test_list_evaluations_applies_filters_before_pagination(
     assert data[0]["model_name"] == "llama3"
     assert data[0]["status"] == "completed"
 
+
 def test_openapi_contains_application_metadata() -> None:
     client = TestClient(app)
 
@@ -902,6 +913,7 @@ def test_openapi_contains_application_metadata() -> None:
         "evaluating Large Language Model outputs"
         in data["info"]["description"]
     )
+
 
 def test_create_evaluation_supports_similarity_metric(
     monkeypatch,
@@ -944,6 +956,7 @@ def test_create_evaluation_supports_similarity_metric(
         == "similarity"
     )
 
+
 def test_list_metrics_returns_available_metrics() -> None:
     client = TestClient(app)
 
@@ -957,6 +970,18 @@ def test_list_metrics_returns_available_metrics() -> None:
         "metrics": [
             "exact_match",
             "similarity",
+            "llm_judge",
         ],
     }
+
+
+def test_create_evaluation_runner_registers_llm_judge() -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    assert (
+        runner._engine._registry.get("llm_judge")
+        is not None
+    )
 
