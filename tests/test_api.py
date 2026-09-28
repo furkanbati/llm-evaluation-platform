@@ -944,3 +944,19 @@ def test_create_evaluation_supports_similarity_metric(
         == "similarity"
     )
 
+def test_list_metrics_returns_available_metrics() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/metrics",
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "metrics": [
+            "exact_match",
+            "similarity",
+        ],
+    }
+

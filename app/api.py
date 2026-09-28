@@ -99,6 +99,25 @@ def health() -> HealthResponse:
         status="ready",
     )
 
+@app.get(
+    "/metrics",
+)
+def list_metrics() -> dict[str, list[str]]:
+    registry = EvaluatorRegistry()
+
+    registry.register(
+        "exact_match",
+        ExactMatchEvaluator(),
+    )
+
+    registry.register(
+        "similarity",
+        SimilarityEvaluator(),
+    )
+
+    return {
+        "metrics": registry.available_metrics(),
+    }
 
 @app.post(
     "/evaluations",
