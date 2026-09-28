@@ -22,11 +22,15 @@ from app.services.evaluation_summary_service import (
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
 from app.storage.evaluation_repository import EvaluationRepository
-
+from app.evaluators.similarity import SimilarityEvaluator
 
 app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,
+    description=(
+        "REST API for evaluating Large Language Model "
+        "outputs against datasets."
+    ),
 )
 
 
@@ -54,6 +58,11 @@ def create_evaluation_runner(
     registry.register(
         "exact_match",
         ExactMatchEvaluator(),
+    )
+
+    registry.register(
+        "similarity",
+        SimilarityEvaluator(),
     )
 
     engine = EvaluationEngine(registry)

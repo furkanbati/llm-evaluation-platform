@@ -206,7 +206,39 @@ def test_engine_raises_error_for_unknown_metric() -> None:
     else:
         raise AssertionError("Expected ValueError for unknown metric")
 
+from app.evaluators.similarity import SimilarityEvaluator
 
+
+def test_engine_runs_similarity_metric() -> None:
+    registry = EvaluatorRegistry()
+
+    registry.register(
+        "similarity",
+        SimilarityEvaluator(),
+    )
+
+    engine = EvaluationEngine(
+        registry,
+    )
+
+    item = DatasetItem(
+        input="Question",
+        expected_output="Paris",
+    )
+
+    result = engine.evaluate(
+        item=item,
+        generated_output="Paris",
+        metrics=["similarity"],
+    )
+
+    assert len(result.metrics) == 1
+    assert (
+        result.metrics[0].metric_name
+        == "similarity"
+    )
+
+    assert result.overall_score == 1.0
 
 
 

@@ -881,4 +881,66 @@ def test_list_evaluations_applies_filters_before_pagination(
     assert data[0]["model_name"] == "llama3"
     assert data[0]["status"] == "completed"
 
+def test_openapi_contains_application_metadata() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/openapi.json",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["info"]["title"] == (
+        "LLM Evaluation Platform"
+    )
+
+    assert data["info"]["version"] == "1.0.0"
+
+    assert (
+        "evaluating Large Language Model outputs"
+        in data["info"]["description"]
+    )
+
+def test_create_evaluation_supports_similarity_metric(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "test",
+                "items": [
+                    {
+                        "input": "Question",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["similarity"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert (
+        data["results"][0]["metrics"][0]["metric_name"]
+        == "similarity"
+    )
 

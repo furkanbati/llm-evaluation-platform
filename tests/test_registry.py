@@ -68,5 +68,25 @@ def test_registry_lists_registered_metrics() -> None:
         "exact_match"
     ]
 
+from app.evaluators.similarity import SimilarityEvaluator
+
+
+def test_registry_registers_similarity_evaluator() -> None:
+    registry = EvaluatorRegistry()
+
+    registry.register(
+        "similarity",
+        SimilarityEvaluator(),
+    )
+
+    evaluator = registry.get(
+        "similarity",
+    )
+
+    assert isinstance(
+        evaluator,
+        SimilarityEvaluator,
+    )
+
 
     
