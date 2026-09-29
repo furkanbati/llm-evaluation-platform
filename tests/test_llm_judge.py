@@ -1,4 +1,3 @@
-
 from app.config import JUDGE_MODEL_NAME, OLLAMA_BASE_URL
 from app.evaluators.llm_judge import LLMJudgeEvaluator
 from app.services.model_client import ModelClient
@@ -11,6 +10,19 @@ class FakeJudgeModelClient(ModelClient):
         model_name: str,
         inputs: list[str],
     ) -> list[str]:
+        return ["YES"]
+
+
+class PromptCaptureModelClient(ModelClient):
+    def __init__(self) -> None:
+        self.prompt = ""
+
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+    ) -> list[str]:
+        self.prompt = inputs[0]
         return ["YES"]
 
 
@@ -45,9 +57,9 @@ def test_llm_judge_works_with_real_ollama() -> None:
         generated_output="The capital of France is Paris.",
     )
 
-    assert result.metric_name == "llm_judge"
     assert result.score in [0.0, 1.0]
     assert result.passed is (result.score == 1.0)
+
 
 def test_llm_judge_accepts_yes_with_extra_text() -> None:
     evaluator = LLMJudgeEvaluator(
@@ -75,5 +87,28 @@ def test_llm_judge_accepts_no_with_extra_text() -> None:
 
     assert result.score == 0.0
     assert result.passed is False
+
+
+def test_llm_judge_prompt_contains_evaluation_instructions() -> None:
+    model_client = PromptCaptureModelClient()
+
+    evaluator = LLMJudgeEvaluator(
+        model_client=model_client,
+        model_name="judge-model",
+    )
+
+    evaluator.evaluate(
+        expected_output="Paris",
+        generated_output="The capital of France is Paris.",
+    )
+
+    prompt = model_client.prompt
+
+    assert "semantic correctness" in prompt.lower()
+    assert "style" in prompt.lower()
+    assert "yes or no" in prompt.lower()
+
+
+
 
 

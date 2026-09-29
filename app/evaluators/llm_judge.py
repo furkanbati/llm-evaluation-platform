@@ -1,4 +1,3 @@
-
 from app.models import MetricResult
 from app.services.model_client import ModelClient
 
@@ -21,7 +20,11 @@ class LLMJudgeEvaluator(Evaluator):
         generated_output: str,
     ) -> MetricResult:
         prompt = (
-            "Evaluate the generated answer against the expected answer.\n"
+            "Evaluate the semantic correctness of the generated answer "
+            "compared with the expected answer.\n"
+            "Judge the meaning and factual correctness of the answer.\n"
+            "Do not mark an answer as incorrect only because its wording "
+            "or style is different.\n"
             f"Expected answer: {expected_output}\n"
             f"Generated answer: {generated_output}\n\n"
             "Respond with only YES or NO."
