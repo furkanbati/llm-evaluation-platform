@@ -1,3 +1,5 @@
+import pytest
+
 from app.config import JUDGE_MODEL_NAME, OLLAMA_BASE_URL
 from app.evaluators.llm_judge import LLMJudgeEvaluator
 from app.services.model_client import ModelClient
@@ -168,3 +170,16 @@ def test_llm_judge_prompt_contains_negative_example() -> None:
     assert "Expected: Paris" in prompt
     assert "Generated: The capital of France is London." in prompt
     assert "Decision: NO" in prompt
+
+def test_llm_judge_rejects_invalid_judgement() -> None:
+    evaluator = LLMJudgeEvaluator(
+        model_client=FakeJudgeModelClient(),
+        model_name="judge-model",
+    )
+
+    with pytest.raises(ValueError, match="Invalid LLM judge response"):
+        evaluator._parse_judgement(
+            "MAYBE",
+        )
+
+
