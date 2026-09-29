@@ -128,3 +128,43 @@ def test_llm_judge_prompt_contains_examples() -> None:
     assert "Generated answer: The capital of France is Paris." in prompt
     assert "YES" in prompt
     assert "NO" in prompt
+
+
+def test_llm_judge_prompt_contains_positive_example() -> None:
+    model_client = PromptCaptureModelClient()
+
+    evaluator = LLMJudgeEvaluator(
+        model_client=model_client,
+        model_name="judge-model",
+    )
+
+    evaluator.evaluate(
+        expected_output="Paris",
+        generated_output="The capital of France is Paris.",
+    )
+
+    prompt = model_client.prompt
+
+    assert "Expected: Paris" in prompt
+    assert "Generated: The capital of France is Paris." in prompt
+    assert "Decision: YES" in prompt
+
+
+def test_llm_judge_prompt_contains_negative_example() -> None:
+    model_client = PromptCaptureModelClient()
+
+    evaluator = LLMJudgeEvaluator(
+        model_client=model_client,
+        model_name="judge-model",
+    )
+
+    evaluator.evaluate(
+        expected_output="Paris",
+        generated_output="The capital of France is London.",
+    )
+
+    prompt = model_client.prompt
+
+    assert "Expected: Paris" in prompt
+    assert "Generated: The capital of France is London." in prompt
+    assert "Decision: NO" in prompt
