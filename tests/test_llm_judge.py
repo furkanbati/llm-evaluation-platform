@@ -109,6 +109,22 @@ def test_llm_judge_prompt_contains_evaluation_instructions() -> None:
     assert "yes or no" in prompt.lower()
 
 
+def test_llm_judge_prompt_contains_examples() -> None:
+    model_client = PromptCaptureModelClient()
 
+    evaluator = LLMJudgeEvaluator(
+        model_client=model_client,
+        model_name="judge-model",
+    )
 
+    evaluator.evaluate(
+        expected_output="Paris",
+        generated_output="The capital of France is Paris.",
+    )
 
+    prompt = model_client.prompt
+
+    assert "Expected answer: Paris" in prompt
+    assert "Generated answer: The capital of France is Paris." in prompt
+    assert "YES" in prompt
+    assert "NO" in prompt
