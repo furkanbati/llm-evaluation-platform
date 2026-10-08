@@ -2,12 +2,20 @@
 
 A production-oriented REST API for evaluating Large Language Model outputs against predefined datasets.
 
-## Features
+The platform provides a structured evaluation workflow with pluggable evaluators, evaluation run lifecycle tracking, result storage, filtering, pagination, and evaluation summaries.
 
+---
+
+# Features
+
+* Multiple evaluation metrics
 * Exact Match evaluation
+* String Similarity evaluation
+* LLM-as-a-Judge evaluation
+* Pluggable evaluator registry
 * Evaluation run lifecycle tracking
 * Evaluation result storage
-* Evaluation summary and metric statistics
+* Evaluation summaries and metric statistics
 * Evaluation filtering by status and model
 * Pagination for evaluation listing
 * REST API
@@ -15,67 +23,197 @@ A production-oriented REST API for evaluating Large Language Model outputs again
 * Docker support
 * Automated tests
 
-## Architecture
+---
+
+# Architecture
 
 The evaluation flow is:
 
 ```text
-Client
-  |
-  v
-FastAPI
-  |
-  v
+                    +------------------+
+                    |      Client      |
+                    +------------------+
+                              |
+                              v
+                       FastAPI REST API
+                              |
+                              v
+                    EvaluationRunner
+                              |
+                    +---------+---------+
+                    |                   |
+                    v                   v
+             ModelClient          EvaluationEngine
+                    |                   |
+                    v                   v
+                  Ollama        EvaluatorRegistry
+                                        |
+                         +--------------+--------------+
+                         |              |              |
+                         v              v              v
+                    Exact Match    Similarity     LLM Judge
+                         |              |              |
+                         +--------------+--------------+
+                                        |
+                                        v
+                                  EvaluationRun
+                                        |
+                                        v
+                              EvaluationRepository
+                                        |
+                                        v
+                                   Summary
+```
+
+The architecture separates:
+
+```text
 EvaluationRunner
-  |
-  +----> OllamaModelClient
-  |             |
-  |             v
-  |           Ollama
-  |
-  v
+        ↓
+Runs the evaluation
+
 EvaluationEngine
-  |
-  v
+        ↓
+Executes the selected metrics
+
 EvaluatorRegistry
-  |
-  v
-EvaluationRun
-  |
-  v
+        ↓
+Finds the evaluator for each metric
+
 EvaluationRepository
+        ↓
+Stores evaluation runs
+
+EvaluationSummaryService
+        ↓
+Builds aggregate evaluation statistics
 ```
 
-## Requirements
+This separation keeps evaluation orchestration, metric implementations, and storage responsibilities independent.
 
-* Docker
-* Docker Compose
+---
 
-The application uses Ollama as the model provider.
+# Evaluation Workflow
 
-## Run
+1. A client submits a dataset, model name, and selected metrics.
+2. `EvaluationRunner` starts an evaluation run.
+3. The configured model client generates outputs for the dataset items.
+4. `EvaluationEngine` executes the selected evaluators.
+5. Each evaluator produces a `MetricResult`.
+6. The evaluation run is completed and stored in the repository.
+7. The API exposes the run, individual results, and summary statistics.
 
-Build and start the services:
-
-```bash
-docker compose up --build
-```
-
-The API will be available at:
+The evaluation lifecycle is:
 
 ```text
-http://localhost:8000
+PENDING
+   ↓
+RUNNING
+   ↓
+COMPLETED
 ```
 
-FastAPI interactive documentation:
+When an evaluation fails:
 
 ```text
-http://localhost:8000/docs
+PENDING
+   ↓
+RUNNING
+   ↓
+FAILED
 ```
 
-## API
+---
 
-### Health Check
+# Evaluation Metrics
+
+The current platform supports three metrics.
+
+## Exact Match
+
+Compares the expected output and generated output after trimming surrounding whitespace.
+
+```text
+Expected: 4
+Generated: 4
+Score: 1.0
+```
+
+```text
+Expected: 4
+Generated: The answer is 4.
+Score: 0.0
+```
+
+Exact Match is useful for deterministic outputs but is intentionally strict.
+
+---
+
+## Similarity
+
+Calculates string similarity between the expected and generated outputs.
+
+The current implementation uses Python's `SequenceMatcher` and considers scores of `0.8` or higher as passing.
+
+```text
+Expected: The capital of France is Paris.
+Generated: The capital of France is Paris.
+Score: 1.0
+```
+
+This metric measures textual similarity rather than embedding-based semantic similarity.
+
+---
+
+## LLM Judge
+
+Uses an LLM to evaluate whether the generated answer is semantically and factually correct compared with the expected answer.
+
+Example:
+
+```text
+Expected: Paris
+Generated: The capital of France is Paris.
+Decision: YES
+```
+
+```text
+Expected: Paris
+Generated: The capital of France is London.
+Decision: NO
+```
+
+The evaluator uses explicit positive and negative examples in its judging prompt and returns a binary score.
+
+---
+
+# Evaluator Registry
+
+Metrics are registered through an `EvaluatorRegistry`.
+
+```text
+Metric name
+     ↓
+EvaluatorRegistry
+     ↓
+Evaluator implementation
+```
+
+Current registrations:
+
+```text
+exact_match → ExactMatchEvaluator
+similarity  → SimilarityEvaluator
+llm_judge   → LLMJudgeEvaluator
+```
+
+This design allows new evaluators to be added without changing the core evaluation engine.
+
+---
+
+# API
+
+## Health Check
 
 ```http
 GET /health
@@ -89,7 +227,29 @@ Example response:
 }
 ```
 
-### Create Evaluation
+---
+
+## List Available Metrics
+
+```http
+GET /metrics
+```
+
+Example response:
+
+```json
+{
+  "metrics": [
+    "exact_match",
+    "similarity",
+    "llm_judge"
+  ]
+}
+```
+
+---
+
+## Create Evaluation
 
 ```http
 POST /evaluations
@@ -110,18 +270,26 @@ Example request:
   },
   "model_name": "llama3",
   "metrics": [
-    "exact_match"
+    "exact_match",
+    "similarity",
+    "llm_judge"
   ]
 }
 ```
 
-### Get Evaluation
+---
+
+## Get Evaluation
 
 ```http
 GET /evaluations/{evaluation_id}
 ```
 
-### List Evaluations
+Returns the stored evaluation run and its results.
+
+---
+
+## List Evaluations
 
 ```http
 GET /evaluations
@@ -142,7 +310,9 @@ Example:
 GET /evaluations?status=completed&model_name=llama3&limit=10&offset=0
 ```
 
-### Get Evaluation Summary
+---
+
+## Get Evaluation Summary
 
 ```http
 GET /evaluations/{evaluation_id}/summary
@@ -158,13 +328,77 @@ The summary includes:
 * Per-metric average score
 * Per-metric pass rate
 
-### Delete Evaluation
+---
+
+## Delete Evaluation
 
 ```http
 DELETE /evaluations/{evaluation_id}
 ```
 
-## Testing
+---
+
+# Example Evaluation
+
+A simple evaluation can use:
+
+```text
+Dataset: math-test
+Model: llama3
+Metrics:
+  - exact_match
+  - similarity
+  - llm_judge
+```
+
+The resulting evaluation contains:
+
+```text
+EvaluationRun
+├── status
+├── model_name
+├── dataset
+├── results
+│   ├── exact_match
+│   ├── similarity
+│   └── llm_judge
+└── summary
+```
+
+---
+
+# Requirements
+
+* Docker
+* Docker Compose
+
+The application uses Ollama as the model provider.
+
+---
+
+# Run
+
+Build and start the services:
+
+```bash
+docker compose up --build
+```
+
+The API will be available at:
+
+```text
+http://localhost:8000
+```
+
+FastAPI interactive documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+# Testing
 
 Run the complete test suite inside the API container:
 
@@ -172,7 +406,7 @@ Run the complete test suite inside the API container:
 docker compose exec evaluation-api python -m pytest
 ```
 
-The project includes unit and API tests covering:
+The test suite covers:
 
 * Data models
 * Evaluation engine
@@ -186,28 +420,110 @@ The project includes unit and API tests covering:
 * Filtering
 * Pagination
 
-## Project Structure
+---
+
+# Project Structure
 
 ```text
-app/
-├── evaluators/
-├── services/
-├── storage/
-├── api.py
-├── config.py
-└── models.py
-
-tests/
+llm-evaluation-platform/
+│
+├── app/
+│   ├── evaluators/
+│   │   ├── base.py
+│   │   ├── exact_match.py
+│   │   ├── llm_judge.py
+│   │   ├── registry.py
+│   │   └── similarity.py
+│   │
+│   ├── services/
+│   │   ├── evaluation_engine.py
+│   │   ├── evaluation_runner.py
+│   │   ├── evaluation_summary_service.py
+│   │   ├── model_client.py
+│   │   └── ollama_model_client.py
+│   │
+│   ├── storage/
+│   │   └── evaluation_repository.py
+│   │
+│   ├── api.py
+│   ├── config.py
+│   └── models.py
+│
+├── tests/
+│   ├── test_api.py
+│   ├── test_config.py
+│   ├── test_engine.py
+│   ├── test_evaluation_runner.py
+│   ├── test_exact_match.py
+│   ├── test_llm_judge.py
+│   ├── test_model_client.py
+│   ├── test_ollama_model_client.py
+│   ├── test_registry.py
+│   ├── test_runner.py
+│   └── ...
+│
+├── Dockerfile
+├── docker-compose.yml
+├── pytest.ini
+├── requirements.txt
+└── README.md
 ```
 
-## Current Evaluation Metric
+---
 
-### Exact Match
+# Storage
 
-The current evaluation engine supports Exact Match evaluation.
+The current repository implementation stores evaluation runs in memory.
 
-The generated output is compared with the expected output and produces a score between `0.0` and `1.0`.
+This keeps the architecture intentionally simple for the current version, but evaluation history is not persistent across application restarts.
 
-## License
+Persistent database storage is planned as a future improvement.
 
-This project is intended as a portfolio project demonstrating production-oriented LLM application development.
+---
+
+# Current Scope
+
+The current implementation focuses on the core evaluation workflow:
+
+```text
+Dataset
+   ↓
+LLM Generation
+   ↓
+Metric Evaluation
+   ↓
+Evaluation Run
+   ↓
+Evaluation Summary
+```
+
+The project currently does not include:
+
+* Persistent database storage
+* Web dashboard
+* Dataset versioning
+* Model benchmarking across large evaluation suites
+* Advanced RAG-specific metrics
+
+---
+
+# Future Improvements
+
+Possible next steps include:
+
+* Embedding-based semantic similarity
+* Weighted metrics
+* Persistent database storage
+* Dataset versioning
+* Model-to-model comparison
+* Evaluation dashboards
+* RAG-specific metrics
+* Evaluation reports
+* Batch evaluation jobs
+* Additional LLM judge strategies
+
+---
+
+# License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
