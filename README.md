@@ -8,7 +8,7 @@ The platform generates answers with a model served by Ollama, scores them with p
 
 # Features
 
-* **Metrics:** Exact Match, Normalized Match, Numeric Match, Token F1, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
+* **Metrics:** Exact Match, Normalized Match, Numeric Match, Token F1, Token Recall, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
 * **LLM judge:** sees the original question, treats answers as tagged data to resist prompt injection, runs at temperature `0.0`, and has a labeled accuracy test
 * **Background evaluations:** `POST /evaluations` returns `202 Accepted` immediately; clients poll for the result
 * **Concurrency limits:** a bounded number of evaluations run at once, the rest wait in a queue, and a full queue returns `503`
@@ -142,7 +142,7 @@ Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` b
 
 # Evaluation Metrics
 
-The platform supports six metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
+The platform supports seven metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
 
 ## Exact Match
 
@@ -228,6 +228,26 @@ The score gives partial credit, which is its main use. The metric passes at `0.5
 
 ---
 
+## Token Recall
+
+Scores the share of the expected words that appear in the generated output, using the same normalization. Extra words do not lower the score, so full-sentence answers are not penalized.
+
+```text
+Expected: Paris
+Generated: The capital of France is Paris.
+Score: 1.0
+```
+
+```text
+Expected: William Shakespeare
+Generated: Shakespeare wrote it.
+Score: 0.5
+```
+
+The metric passes at `0.5` or above. Like Normalized Match, it can accept wrong answers that mention the expected words, such as `It could be Paris or Lyon`, and partial answers.
+
+---
+
 ## Similarity
 
 Calculates string similarity between the expected and generated outputs.
@@ -285,10 +305,12 @@ The metrics trade cost for accuracy. On the 23 labeled cases:
 | `normalized_match` | 18/23 | 7/10 | 11/13 |
 | `numeric_match` (7 numeric cases) | 7/7 | 4/4 | 3/3 |
 | `token_f1` | 13/23 | 1/10 | 12/13 |
+| `token_recall` | 18/23 | 8/10 | 10/13 |
 | `llm_judge` (`llama3`) | 22/23 | 9/10 | 13/13 |
 
 * Use `numeric_match` for datasets with numeric answers.
 * Use `normalized_match` for short factual answers when an LLM judge is too slow; it accepts more correct answers than `exact_match` but can accept wrong answers that mention the expected text.
+* Use `token_recall` instead of `token_f1` when answers are full sentences; it accepts slightly more correct answers than `normalized_match` and slightly more wrong ones.
 * Use `token_f1` for short, extractive answers where partial credit matters; most correct answers in the labeled cases are full sentences, which it scores low.
 * Use `llm_judge` when answers are free-form and accuracy matters most.
 
@@ -316,6 +338,7 @@ normalized_match → NormalizedMatchEvaluator
 numeric_match    → NumericMatchEvaluator
 similarity       → SimilarityEvaluator
 token_f1         → TokenF1Evaluator
+token_recall     → TokenRecallEvaluator
 llm_judge        → LLMJudgeEvaluator
 ```
 
@@ -357,7 +380,8 @@ Example response:
     "normalized_match",
     "numeric_match",
     "similarity",
-    "token_f1"
+    "token_f1",
+    "token_recall"
   ]
 }
 ```
@@ -706,7 +730,7 @@ llm-evaluation-platform/
 │   │   ├── numeric_match.py
 │   │   ├── registry.py
 │   │   ├── similarity.py
-│   │   └── token_f1.py
+│   │   └── token_f1.py            # token_f1 and token_recall
 │   │
 │   ├── services/
 │   │   ├── evaluation_engine.py
