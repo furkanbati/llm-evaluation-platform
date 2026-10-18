@@ -11,6 +11,55 @@ from app.errors import (
 from app.models import GenerationOptions
 from app.services.model_client import ModelClient
 
+OLLAMA_TIMEOUT_SECONDS = 60.0
+
+
+def post_to_ollama(
+    url: str,
+    payload: dict[str, Any],
+    model_name: str,
+) -> dict[str, Any]:
+    """POST to Ollama and translate failures into evaluation errors."""
+
+    try:
+        response = httpx.post(
+            url,
+            json=payload,
+            timeout=OLLAMA_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise ModelTimeoutError(str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        # Ollama answers 404 when the model has not been pulled.
+        if exc.response.status_code == 404:
+            raise ModelNotFoundError(model_name, str(exc)) from exc
+
+        raise ModelProviderError(str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise ModelUnavailableError(str(exc)) from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ModelProviderError(
+            f"Unexpected Ollama response: {response.text[:200]}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise ModelProviderError(f"Unexpected Ollama response: {response.text[:200]}")
+
+    return data
+
+
+def read_field(data: dict[str, Any], field: str) -> Any:
+    """Return a field of an Ollama response or raise ModelProviderError."""
+
+    if field not in data:
+        raise ModelProviderError(f"Ollama response has no '{field}' field")
+
+    return data[field]
+
 
 class OllamaModelClient(ModelClient):
     """Model client that generates outputs through Ollama."""
@@ -48,43 +97,14 @@ class OllamaModelClient(ModelClient):
             if merged_options:
                 payload["options"] = merged_options
 
+            data = post_to_ollama(
+                url=f"{self._base_url}/api/generate",
+                payload=payload,
+                model_name=model_name,
+            )
+
             outputs.append(
-                self._post_generate(
-                    model_name=model_name,
-                    payload=payload,
-                )
+                str(read_field(data, "response")).strip(),
             )
 
         return outputs
-
-    def _post_generate(
-        self,
-        model_name: str,
-        payload: dict[str, Any],
-    ) -> str:
-        """Call Ollama and translate failures into evaluation errors."""
-
-        try:
-            response = httpx.post(
-                f"{self._base_url}/api/generate",
-                json=payload,
-                timeout=60.0,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise ModelTimeoutError(str(exc)) from exc
-        except httpx.HTTPStatusError as exc:
-            # Ollama answers 404 when the model has not been pulled.
-            if exc.response.status_code == 404:
-                raise ModelNotFoundError(model_name, str(exc)) from exc
-
-            raise ModelProviderError(str(exc)) from exc
-        except httpx.HTTPError as exc:
-            raise ModelUnavailableError(str(exc)) from exc
-
-        try:
-            return str(response.json()["response"]).strip()
-        except (ValueError, KeyError, TypeError) as exc:
-            raise ModelProviderError(
-                f"Unexpected Ollama response: {response.text[:200]}"
-            ) from exc
