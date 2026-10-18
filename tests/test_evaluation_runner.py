@@ -305,6 +305,7 @@ class InvalidJudgementEvaluator(ExactMatchEvaluator):
         self,
         expected_output: str,
         generated_output: str,
+        input_text: str | None = None,
     ):
         raise ValueError("Invalid LLM judge response: MAYBE")
 

@@ -49,6 +49,7 @@ class EvaluationEngine:
             metric_result = evaluator.evaluate(
                 expected_output=item.expected_output,
                 generated_output=generated_output,
+                input_text=item.input,
             )
 
             metric_results.append(metric_result)

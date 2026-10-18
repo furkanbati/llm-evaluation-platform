@@ -18,6 +18,7 @@ class FixedScoreEvaluator(Evaluator):
         self,
         expected_output: str,
         generated_output: str,
+        input_text: str | None = None,
     ) -> MetricResult:
         return MetricResult(
             metric_name=self._metric_name,
@@ -277,3 +278,44 @@ def test_engine_validate_metrics_lists_all_unknown_metrics() -> None:
         assert "exact_match" not in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown metrics")
+
+
+def test_engine_passes_dataset_input_to_evaluators() -> None:
+    class InputCaptureEvaluator(Evaluator):
+        def __init__(self) -> None:
+            self.input_text: str | None = None
+
+        def evaluate(
+            self,
+            expected_output: str,
+            generated_output: str,
+            input_text: str | None = None,
+        ) -> MetricResult:
+            self.input_text = input_text
+
+            return MetricResult(
+                metric_name="capture",
+                score=1.0,
+                passed=True,
+            )
+
+    evaluator = InputCaptureEvaluator()
+
+    registry = EvaluatorRegistry()
+    registry.register(
+        "capture",
+        evaluator,
+    )
+
+    engine = EvaluationEngine(registry)
+
+    engine.evaluate(
+        item=DatasetItem(
+            input="What is the capital of France?",
+            expected_output="Paris",
+        ),
+        generated_output="Paris",
+        metrics=["capture"],
+    )
+
+    assert evaluator.input_text == "What is the capital of France?"
