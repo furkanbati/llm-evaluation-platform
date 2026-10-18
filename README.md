@@ -96,12 +96,13 @@ This separation keeps evaluation orchestration, metric implementations, and stor
 # Evaluation Workflow
 
 1. A client submits a dataset, model name, and selected metrics.
-2. `EvaluationRunner` starts an evaluation run.
-3. The configured model client generates outputs for the dataset items.
-4. `EvaluationEngine` executes the selected evaluators.
-5. Each evaluator produces a `MetricResult`.
-6. The evaluation run is completed and stored in the repository.
-7. The API exposes the run, individual results, and summary statistics.
+2. `EvaluationRunner` validates the request and stores a `PENDING` run.
+3. The API responds immediately with `202 Accepted` and the run is executed in the background.
+4. The configured model client generates outputs for the dataset items.
+5. `EvaluationEngine` executes the selected evaluators.
+6. Each evaluator produces a `MetricResult`.
+7. The evaluation run is marked `COMPLETED` or `FAILED` in the repository.
+8. The client polls the run and reads its results and summary statistics.
 
 The evaluation lifecycle is:
 
@@ -286,6 +287,27 @@ Example request:
   ]
 }
 ```
+
+Evaluations run in the background. A valid request returns `202 Accepted` immediately with the `PENDING` run and a `Location` header pointing to it:
+
+```http
+HTTP/1.1 202 Accepted
+Location: /evaluations/3f6c1b8e-...
+```
+
+```json
+{
+  "id": "3f6c1b8e-...",
+  "status": "pending",
+  "results": [],
+  "completed_at": null,
+  "error": null
+}
+```
+
+Poll `GET /evaluations/{evaluation_id}` until `status` is `completed` or `failed`.
+
+Invalid requests, such as unknown metrics, return `400 Bad Request` and no run is created.
 
 ---
 
@@ -513,9 +535,12 @@ Evaluation Run
 Evaluation Summary
 ```
 
+Background evaluations run inside the API process. Pending or running evaluations are lost if the application restarts.
+
 The project currently does not include:
 
 * Persistent database storage
+* A durable job queue
 * Web dashboard
 * Dataset versioning
 * Model benchmarking across large evaluation suites
