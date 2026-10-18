@@ -1003,6 +1003,7 @@ def test_list_metrics_returns_available_metrics() -> None:
             "llm_judge",
             "normalized_match",
             "numeric_match",
+            "semantic_similarity",
             "similarity",
             "token_f1",
             "token_recall",

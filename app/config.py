@@ -39,3 +39,10 @@ MAX_CONCURRENT_EVALUATIONS = int(os.getenv("MAX_CONCURRENT_EVALUATIONS", "2"))
 
 # Evaluations that can be queued or running before new requests get 503.
 MAX_QUEUED_EVALUATIONS = int(os.getenv("MAX_QUEUED_EVALUATIONS", "100"))
+
+# Embedding model and pass threshold for the semantic_similarity metric.
+# The threshold depends on the model; recalibrate it when the model changes.
+SEMANTIC_SIMILARITY_MODEL = os.getenv("SEMANTIC_SIMILARITY_MODEL", "nomic-embed-text")
+SEMANTIC_SIMILARITY_THRESHOLD = float(
+    os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.73")
+)
