@@ -9,7 +9,7 @@ venv/
 
 .env
 
-data/
+/data/
 
 .idea/
 .vscode/
