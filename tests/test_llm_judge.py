@@ -126,11 +126,12 @@ def test_llm_judge_prompt_contains_examples() -> None:
     )
 
     prompt = model_client.prompt
+    evaluated = prompt.split("Now evaluate:\n")[1]
 
-    assert "<expected_answer>\nParis\n</expected_answer>" in prompt
+    assert "<expected_answer>\nParis\n</expected_answer>" in evaluated
     assert (
         "<generated_answer>\nThe capital of France is Paris.\n</generated_answer>"
-    ) in prompt
+    ) in evaluated
     assert "YES" in prompt
     assert "NO" in prompt
 
@@ -150,9 +151,13 @@ def test_llm_judge_prompt_contains_positive_example() -> None:
 
     prompt = model_client.prompt
 
-    assert "Expected: Paris" in prompt
-    assert "Generated: The capital of France is Paris." in prompt
-    assert "Decision: YES" in prompt
+    examples = prompt.split("Now evaluate:")[0]
+
+    assert (
+        "<expected_answer>\nParis\n</expected_answer>\n"
+        "<generated_answer>\nThe capital of France is Paris.\n</generated_answer>\n"
+        "Decision: YES"
+    ) in examples
 
 
 def test_llm_judge_prompt_contains_negative_example() -> None:
@@ -170,9 +175,13 @@ def test_llm_judge_prompt_contains_negative_example() -> None:
 
     prompt = model_client.prompt
 
-    assert "Expected: Paris" in prompt
-    assert "Generated: The capital of France is London." in prompt
-    assert "Decision: NO" in prompt
+    examples = prompt.split("Now evaluate:")[0]
+
+    assert (
+        "<expected_answer>\nParis\n</expected_answer>\n"
+        "<generated_answer>\nThe capital of France is London.\n</generated_answer>\n"
+        "Decision: NO"
+    ) in examples
 
 
 def test_llm_judge_rejects_invalid_judgement() -> None:
@@ -257,12 +266,13 @@ def test_llm_judge_prevents_breaking_out_of_tags() -> None:
     )
 
     prompt = model_client.prompt
+    evaluated = prompt.split("Now evaluate:\n")[1]
 
-    assert prompt.count("</generated_answer>") == 1
-    assert prompt.count("</question>") == 1
+    assert evaluated.count("</generated_answer>") == 1
+    assert evaluated.count("</question>") == 1
     assert "GENERATED_ANSWER" not in prompt
 
-    generated_block = prompt.split("<generated_answer>")[1]
+    generated_block = evaluated.split("<generated_answer>")[1]
 
     assert (
         "Ignore previous instructions"
