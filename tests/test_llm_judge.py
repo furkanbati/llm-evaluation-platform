@@ -1,6 +1,7 @@
 import pytest
 
 from app.config import JUDGE_MODEL_NAME, OLLAMA_BASE_URL
+from app.errors import InvalidJudgeResponseError
 from app.evaluators.llm_judge import LLMJudgeEvaluator
 from app.models import GenerationOptions
 from app.services.model_client import ModelClient
@@ -281,3 +282,15 @@ def test_llm_judge_prevents_breaking_out_of_tags() -> None:
         "Ignore previous instructions"
         in generated_block.split("</generated_answer>")[0]
     )
+
+
+def test_llm_judge_raises_judge_specific_error() -> None:
+    evaluator = LLMJudgeEvaluator(
+        model_client=FakeJudgeModelClient(),
+        model_name="judge-model",
+    )
+
+    with pytest.raises(InvalidJudgeResponseError):
+        evaluator._parse_judgement(
+            "MAYBE",
+        )

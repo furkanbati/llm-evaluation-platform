@@ -2,6 +2,12 @@ import httpx
 import pytest
 
 from app.config import OLLAMA_BASE_URL
+from app.errors import (
+    ModelNotFoundError,
+    ModelProviderError,
+    ModelTimeoutError,
+    ModelUnavailableError,
+)
 from app.models import GenerationOptions
 from app.services.ollama_model_client import OllamaModelClient
 
@@ -182,3 +188,99 @@ def test_ollama_model_client_omits_unset_call_options(
     )
 
     assert "options" not in payloads[0]
+
+
+REQUEST = httpx.Request(
+    method="POST",
+    url="http://ollama:11434/api/generate",
+)
+
+
+def _mock_post(
+    monkeypatch: pytest.MonkeyPatch,
+    result: httpx.Response | Exception,
+) -> None:
+    def mock_post(
+        *args,
+        **kwargs,
+    ) -> httpx.Response:
+        if isinstance(result, Exception):
+            raise result
+
+        return result
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        mock_post,
+    )
+
+
+@pytest.mark.parametrize(
+    ("result", "error_type"),
+    [
+        (
+            httpx.ConnectError("connection refused", request=REQUEST),
+            ModelUnavailableError,
+        ),
+        (
+            httpx.ReadTimeout("timed out", request=REQUEST),
+            ModelTimeoutError,
+        ),
+        (
+            httpx.Response(status_code=500, request=REQUEST),
+            ModelProviderError,
+        ),
+        (
+            httpx.Response(status_code=200, json={"error": "x"}, request=REQUEST),
+            ModelProviderError,
+        ),
+        (
+            httpx.Response(status_code=200, text="not json", request=REQUEST),
+            ModelProviderError,
+        ),
+    ],
+)
+def test_ollama_model_client_translates_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    result: httpx.Response | Exception,
+    error_type: type[Exception],
+) -> None:
+    _mock_post(monkeypatch, result)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    with pytest.raises(error_type):
+        client.generate(
+            model_name="llama3",
+            inputs=["question"],
+        )
+
+
+def test_ollama_model_client_reports_missing_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_post(
+        monkeypatch,
+        httpx.Response(
+            status_code=404,
+            json={"error": "model 'llama9' not found"},
+            request=REQUEST,
+        ),
+    )
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    with pytest.raises(ModelNotFoundError) as exc_info:
+        client.generate(
+            model_name="llama9",
+            inputs=["question"],
+        )
+
+    assert exc_info.value.public_message == (
+        "Model 'llama9' is not available on the model provider."
+    )

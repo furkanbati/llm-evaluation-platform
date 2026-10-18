@@ -1,8 +1,10 @@
 import logging
 from datetime import UTC, datetime
 
+from app.errors import EvaluationError, InvalidModelOutputError
 from app.models import (
     Dataset,
+    EvaluationErrorCode,
     EvaluationRun,
     EvaluationStatus,
     GenerationOptions,
@@ -13,8 +15,6 @@ from app.storage.base import BaseEvaluationRepository
 from app.storage.evaluation_repository import EvaluationRepository
 
 logger = logging.getLogger(__name__)
-
-MAX_ERROR_LENGTH = 1_000
 
 LLM_JUDGE_METRIC = "llm_judge"
 
@@ -143,10 +143,20 @@ class EvaluationRunner:
                 )
 
                 if len(dataset.items) != len(generated_outputs):
-                    raise ValueError(
+                    raise InvalidModelOutputError(
                         "Model client returned "
                         f"{len(generated_outputs)} outputs "
                         f"for {len(dataset.items)} dataset items"
+                    )
+
+            for item, generated_output in zip(
+                dataset.items,
+                generated_outputs,
+                strict=True,
+            ):
+                if not generated_output.strip():
+                    raise InvalidModelOutputError(
+                        f"Empty output for dataset item {item.id}"
                     )
 
             results = []
@@ -174,7 +184,9 @@ class EvaluationRunner:
                 evaluation_run.id,
             )
 
-            evaluation_run.error = self._format_error(exc)
+            evaluation_run.error_code, evaluation_run.error = self._classify_error(
+                exc,
+            )
             evaluation_run.completed_at = datetime.now(UTC)
             evaluation_run.status = EvaluationStatus.FAILED
 
@@ -197,6 +209,7 @@ class EvaluationRunner:
         ]
 
         for evaluation_run in interrupted:
+            evaluation_run.error_code = EvaluationErrorCode.INTERRUPTED
             evaluation_run.error = INTERRUPTED_ERROR
             evaluation_run.completed_at = datetime.now(UTC)
             evaluation_run.status = EvaluationStatus.FAILED
@@ -240,7 +253,19 @@ class EvaluationRunner:
             raise ValueError("Number of generated outputs must match dataset items")
 
     @staticmethod
-    def _format_error(exc: Exception) -> str:
-        message = str(exc) or type(exc).__name__
+    def _classify_error(
+        exc: Exception,
+    ) -> tuple[EvaluationErrorCode, str]:
+        """Return a public error code and message for a failure.
 
-        return message[:MAX_ERROR_LENGTH]
+        Details of the original exception are only logged, so provider
+        addresses and system messages are not exposed through the API.
+        """
+
+        if isinstance(exc, EvaluationError):
+            return exc.code, exc.public_message
+
+        return (
+            EvaluationErrorCode.INTERNAL_ERROR,
+            EvaluationError.public_message,
+        )
