@@ -1091,9 +1091,11 @@ def test_runner_uses_separate_judge_model_client() -> None:
 def test_create_evaluation_returns_before_running_evaluation(
     monkeypatch,
 ) -> None:
-    from fastapi import BackgroundTasks, Response
+    from fastapi import Response
 
     from app.models import EvaluationRequest
+    from app.services.evaluation_executor import EvaluationExecutor
+    from tests.conftest import ManualExecutor
 
     class CountingModelClient(ModelClient):
         def __init__(self) -> None:
@@ -1120,7 +1122,17 @@ def test_create_evaluation_returns_before_running_evaluation(
         runner,
     )
 
-    background_tasks = BackgroundTasks()
+    manual_executor = ManualExecutor()
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_executor",
+        EvaluationExecutor(
+            max_concurrent=1,
+            max_queued=10,
+            executor=manual_executor,
+        ),
+    )
 
     accepted = api.create_evaluation(
         request=EvaluationRequest(
@@ -1136,16 +1148,14 @@ def test_create_evaluation_returns_before_running_evaluation(
             model_name="llama3",
             metrics=["exact_match"],
         ),
-        background_tasks=background_tasks,
         response=Response(),
     )
 
     assert accepted.status == "pending"
     assert model_client.calls == 0
-    assert len(background_tasks.tasks) == 1
+    assert len(manual_executor.pending) == 1
 
-    task = background_tasks.tasks[0]
-    task.func(*task.args, **task.kwargs)
+    manual_executor.run_next()
 
     stored = runner.repository.get(accepted.id)
 
@@ -1404,3 +1414,102 @@ def test_create_evaluation_rejects_invalid_generation_options() -> None:
         )
 
         assert response.status_code == 422, options
+
+
+EVALUATION_REQUEST = {
+    "dataset": {
+        "name": "math-test",
+        "items": [
+            {
+                "input": "2 + 2",
+                "expected_output": "4",
+            },
+        ],
+    },
+    "model_name": "llama3",
+    "metrics": ["exact_match"],
+}
+
+
+def test_create_evaluation_returns_503_when_queue_is_full(
+    monkeypatch,
+    immediate_evaluation_executor,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    for _ in range(100):
+        immediate_evaluation_executor.reserve()
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json=EVALUATION_REQUEST,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Too many evaluations are queued. Try again later.",
+    }
+    assert runner.repository.list() == []
+
+
+def test_create_evaluation_releases_slot_for_invalid_request(
+    monkeypatch,
+    immediate_evaluation_executor,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            **EVALUATION_REQUEST,
+            "metrics": ["unknown_metric"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert immediate_evaluation_executor.in_flight == 0
+
+
+def test_create_evaluation_releases_slot_after_completion(
+    monkeypatch,
+    immediate_evaluation_executor,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json=EVALUATION_REQUEST,
+    )
+
+    assert response.status_code == 202
+    assert immediate_evaluation_executor.in_flight == 0
