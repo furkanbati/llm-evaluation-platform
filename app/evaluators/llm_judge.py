@@ -1,5 +1,6 @@
 import re
 
+from app.errors import InvalidJudgeResponseError
 from app.models import MetricResult
 from app.services.model_client import ModelClient
 
@@ -121,4 +122,4 @@ class LLMJudgeEvaluator(Evaluator):
                 passed=False,
             )
 
-        raise ValueError(f"Invalid LLM judge response: {judgement}")
+        raise InvalidJudgeResponseError(f"Invalid LLM judge response: {judgement}")

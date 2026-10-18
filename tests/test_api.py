@@ -8,6 +8,7 @@ from app.api import (
     create_evaluation_runner,
     evaluation_repository,
 )
+from app.errors import ModelUnavailableError
 from app.models import (
     EvaluationRun,
     GenerationOptions,
@@ -491,6 +492,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "results",
         "created_at",
         "completed_at",
+        "error_code",
         "error",
     }
 
@@ -1162,7 +1164,9 @@ def test_create_evaluation_reports_failure_through_get(
             inputs: list[str],
             options: GenerationOptions | None = None,
         ) -> list[str]:
-            raise RuntimeError("Ollama is unavailable")
+            raise ModelUnavailableError(
+                "connection refused: http://ollama:11434/api/generate"
+            )
 
     runner = create_evaluation_runner(
         model_client=UnavailableModelClient(),
@@ -1202,7 +1206,9 @@ def test_create_evaluation_reports_failure_through_get(
     data = response.json()
 
     assert data["status"] == "failed"
-    assert data["error"] == "Ollama is unavailable"
+    assert data["error_code"] == "model_unavailable"
+    assert data["error"] == "Could not connect to the model provider."
+    assert "ollama:11434" not in response.text
 
 
 def test_create_repository_uses_sqlite_when_path_is_set(
@@ -1257,6 +1263,7 @@ def test_startup_marks_interrupted_runs_as_failed(
 
     assert data["status"] == "failed"
     assert data["error"] == "Interrupted by application restart"
+    assert data["error_code"] == "interrupted"
 
 
 def test_list_evaluations_rejects_invalid_pagination() -> None:

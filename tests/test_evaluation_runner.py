@@ -1,10 +1,12 @@
 import pytest
 
+from app.errors import InvalidJudgeResponseError, ModelUnavailableError
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
     Dataset,
     DatasetItem,
+    EvaluationErrorCode,
     EvaluationResult,
     EvaluationRun,
     EvaluationStatus,
@@ -314,7 +316,7 @@ class InvalidJudgementEvaluator(ExactMatchEvaluator):
         generated_output: str,
         input_text: str | None = None,
     ):
-        raise ValueError("Invalid LLM judge response: MAYBE")
+        raise InvalidJudgeResponseError("Invalid LLM judge response: MAYBE")
 
 
 def create_dataset() -> Dataset:
@@ -380,7 +382,8 @@ def test_runner_records_error_when_model_generation_fails() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert result.error == "Model generation failed"
+    assert result.error_code == EvaluationErrorCode.INTERNAL_ERROR
+    assert result.error == "An internal error occurred while running the evaluation."
 
 
 def test_runner_completed_evaluation_has_no_error() -> None:
@@ -396,6 +399,7 @@ def test_runner_completed_evaluation_has_no_error() -> None:
 
     assert result.status == EvaluationStatus.COMPLETED
     assert result.error is None
+    assert result.error_code is None
 
 
 def test_runner_marks_failed_when_evaluator_raises_value_error() -> None:
@@ -420,7 +424,9 @@ def test_runner_marks_failed_when_evaluator_raises_value_error() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert "Invalid LLM judge response" in result.error
+    assert result.error_code == EvaluationErrorCode.INVALID_JUDGE_RESPONSE
+    assert result.error == ("The LLM judge returned a response that was not YES or NO.")
+    assert "MAYBE" not in result.error
     assert repository.get(result.id).status == EvaluationStatus.FAILED
 
 
@@ -436,7 +442,8 @@ def test_runner_marks_failed_when_model_returns_empty_output() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert result.error is not None
+    assert result.error_code == EvaluationErrorCode.INVALID_MODEL_OUTPUT
+    assert result.error == "The model returned an invalid output."
     assert result.completed_at is not None
 
 
@@ -452,10 +459,11 @@ def test_runner_marks_failed_when_model_returns_wrong_output_count() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert "2 outputs" in result.error
+    assert result.error_code == EvaluationErrorCode.INVALID_MODEL_OUTPUT
+    assert result.error == "The model returned an invalid output."
 
 
-def test_runner_truncates_long_error_messages() -> None:
+def test_runner_does_not_expose_raw_error_messages() -> None:
     class VerboseFailingModelClient(ModelClient):
         def generate(
             self,
@@ -476,7 +484,8 @@ def test_runner_truncates_long_error_messages() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert len(result.error) == 1_000
+    assert result.error_code == EvaluationErrorCode.INTERNAL_ERROR
+    assert result.error == "An internal error occurred while running the evaluation."
 
 
 def test_create_run_stores_pending_run_without_generating() -> None:
@@ -545,7 +554,8 @@ def test_execute_does_not_raise_when_engine_fails() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert result.error == "Evaluation failed"
+    assert result.error_code == EvaluationErrorCode.INTERNAL_ERROR
+    assert result.error == "An internal error occurred while running the evaluation."
 
 
 def test_create_run_stores_dataset_and_settings() -> None:
@@ -630,6 +640,7 @@ def test_fail_interrupted_runs_marks_unfinished_runs_failed() -> None:
 
         assert stored.status == EvaluationStatus.FAILED
         assert stored.error == "Interrupted by application restart"
+        assert stored.error_code == EvaluationErrorCode.INTERRUPTED
         assert stored.completed_at is not None
 
     assert repository.get(completed.id).status == EvaluationStatus.COMPLETED
@@ -666,9 +677,8 @@ def test_execute_fails_run_without_model_client() -> None:
     )
 
     assert result.status == EvaluationStatus.FAILED
-    assert result.error == (
-        "Model client is required when generated outputs are not provided"
-    )
+    assert result.error_code == EvaluationErrorCode.INTERNAL_ERROR
+    assert result.error == "An internal error occurred while running the evaluation."
 
 
 class OptionsCaptureModelClient(ModelClient):
@@ -767,3 +777,46 @@ def test_execute_sends_stored_generation_options_to_model() -> None:
     assert result.status == EvaluationStatus.COMPLETED
     assert model_client.options == GenerationOptions(temperature=0.8, seed=42)
     assert model_client.options == result.generation_options
+
+
+def test_runner_records_public_message_for_evaluation_errors() -> None:
+    class UnavailableModelClient(ModelClient):
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+            options: GenerationOptions | None = None,
+        ) -> list[str]:
+            raise ModelUnavailableError(
+                "[WinError 10061] connection refused: http://ollama:11434"
+            )
+
+    runner = create_runner(
+        model_client=UnavailableModelClient(),
+    )
+
+    result = runner.run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert result.status == EvaluationStatus.FAILED
+    assert result.error_code == EvaluationErrorCode.MODEL_UNAVAILABLE
+    assert result.error == "Could not connect to the model provider."
+    assert "ollama:11434" not in result.error
+
+
+def test_runner_rejects_empty_provided_outputs_as_invalid_output() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    result = runner.run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+        generated_outputs=["   "],
+    )
+
+    assert result.error_code == EvaluationErrorCode.INVALID_MODEL_OUTPUT

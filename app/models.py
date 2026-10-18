@@ -15,6 +15,19 @@ class EvaluationStatus(StrEnum):
     FAILED = "failed"
 
 
+class EvaluationErrorCode(StrEnum):
+    """Categories of failures recorded on FAILED runs."""
+
+    MODEL_UNAVAILABLE = "model_unavailable"
+    MODEL_TIMEOUT = "model_timeout"
+    MODEL_NOT_FOUND = "model_not_found"
+    MODEL_PROVIDER_ERROR = "model_provider_error"
+    INVALID_MODEL_OUTPUT = "invalid_model_output"
+    INVALID_JUDGE_RESPONSE = "invalid_judge_response"
+    INTERRUPTED = "interrupted"
+    INTERNAL_ERROR = "internal_error"
+
+
 class DatasetItem(BaseModel):
     """A single input/expected-output pair used for evaluation."""
 
@@ -134,6 +147,7 @@ class EvaluationRun(BaseModel):
     results: list[EvaluationResult] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    error_code: EvaluationErrorCode | None = None
     error: str | None = Field(default=None, max_length=1_000)
 
 
