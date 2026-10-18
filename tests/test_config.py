@@ -154,3 +154,27 @@ def test_generation_seed_uses_environment_variable(
     importlib.reload(config)
 
     assert config.GENERATION_SEED == 42
+
+
+def test_evaluation_limits_use_defaults(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("MAX_CONCURRENT_EVALUATIONS", raising=False)
+    monkeypatch.delenv("MAX_QUEUED_EVALUATIONS", raising=False)
+
+    importlib.reload(config)
+
+    assert config.MAX_CONCURRENT_EVALUATIONS == 2
+    assert config.MAX_QUEUED_EVALUATIONS == 100
+
+
+def test_evaluation_limits_use_environment_variables(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MAX_CONCURRENT_EVALUATIONS", "4")
+    monkeypatch.setenv("MAX_QUEUED_EVALUATIONS", "20")
+
+    importlib.reload(config)
+
+    assert config.MAX_CONCURRENT_EVALUATIONS == 4
+    assert config.MAX_QUEUED_EVALUATIONS == 20

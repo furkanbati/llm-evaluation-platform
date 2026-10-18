@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import (
-    BackgroundTasks,
     FastAPI,
     HTTPException,
     Query,
@@ -20,6 +19,8 @@ from app.config import (
     GENERATION_TEMPERATURE,
     JUDGE_MODEL_NAME,
     JUDGE_TEMPERATURE,
+    MAX_CONCURRENT_EVALUATIONS,
+    MAX_QUEUED_EVALUATIONS,
     OLLAMA_BASE_URL,
 )
 from app.evaluators.exact_match import ExactMatchEvaluator
@@ -36,6 +37,10 @@ from app.models import (
     HealthResponse,
 )
 from app.services.evaluation_engine import EvaluationEngine
+from app.services.evaluation_executor import (
+    EvaluationExecutor,
+    EvaluationQueueFullError,
+)
 from app.services.evaluation_runner import EvaluationRunner
 from app.services.evaluation_summary_service import (
     EvaluationSummaryService,
@@ -53,6 +58,9 @@ from app.storage.sqlite_evaluation_repository import (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     evaluation_runner.fail_interrupted_runs()
     yield
+    # Queued evaluations are cancelled; the next startup marks them as
+    # interrupted.
+    evaluation_executor.shutdown()
 
 
 app = FastAPI(
@@ -157,6 +165,11 @@ evaluation_runner = create_evaluation_runner(
     repository=evaluation_repository,
 )
 
+evaluation_executor = EvaluationExecutor(
+    max_concurrent=MAX_CONCURRENT_EVALUATIONS,
+    max_queued=MAX_QUEUED_EVALUATIONS,
+)
+
 evaluation_summary_service = EvaluationSummaryService()
 
 
@@ -194,20 +207,31 @@ def list_metrics() -> dict[str, list[str]]:
         500: {
             "model": ErrorResponse,
         },
+        503: {
+            "model": ErrorResponse,
+        },
     },
 )
 def create_evaluation(
     request: EvaluationRequest,
-    background_tasks: BackgroundTasks,
     response: Response,
 ) -> EvaluationRun:
-    """Accept an evaluation and execute it in the background.
+    """Accept an evaluation and queue it for execution.
 
     The returned run is PENDING; poll GET /evaluations/{id} for the
-    outcome.
+    outcome. Returns 503 when too many evaluations are queued or running.
     """
 
     runner = evaluation_runner
+    executor = evaluation_executor
+
+    try:
+        executor.reserve()
+    except EvaluationQueueFullError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Too many evaluations are queued. Try again later.",
+        ) from exc
 
     try:
         evaluation_run = runner.create_run(
@@ -217,12 +241,19 @@ def create_evaluation(
             generation_options=request.generation_options,
         )
     except ValueError as exc:
+        executor.release()
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
+    except Exception:
+        executor.release()
+        raise
 
-    background_tasks.add_task(
+    # Copy before submitting: the executor may start the run immediately.
+    accepted = evaluation_run.model_copy(deep=True)
+
+    executor.submit(
         runner.execute,
         evaluation_run=evaluation_run,
         dataset=request.dataset,
@@ -231,7 +262,7 @@ def create_evaluation(
 
     response.headers["Location"] = f"/evaluations/{evaluation_run.id}"
 
-    return evaluation_run.model_copy(deep=True)
+    return accepted
 
 
 @app.get(

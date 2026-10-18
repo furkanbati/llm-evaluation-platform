@@ -33,3 +33,9 @@ GENERATION_TEMPERATURE = (
 
 _generation_seed = os.getenv("GENERATION_SEED", "")
 GENERATION_SEED = int(_generation_seed) if _generation_seed else None
+
+# Evaluations that run at once; others wait in a queue as PENDING.
+MAX_CONCURRENT_EVALUATIONS = int(os.getenv("MAX_CONCURRENT_EVALUATIONS", "2"))
+
+# Evaluations that can be queued or running before new requests get 503.
+MAX_QUEUED_EVALUATIONS = int(os.getenv("MAX_QUEUED_EVALUATIONS", "100"))
