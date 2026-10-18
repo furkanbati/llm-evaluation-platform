@@ -4,7 +4,6 @@ from app.models import MetricResult
 
 
 class Evaluator(ABC):
-
     @abstractmethod
     def evaluate(
         self,
@@ -17,5 +16,3 @@ class Evaluator(ABC):
         `input_text` is the original dataset input. Evaluators that do
         not need it may ignore it.
         """
-
-

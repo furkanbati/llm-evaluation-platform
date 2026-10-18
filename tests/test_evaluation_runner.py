@@ -275,6 +275,7 @@ def test_runner_transitions_from_pending_to_running() -> None:
     assert repository.statuses[1] == EvaluationStatus.RUNNING
     assert result.status == EvaluationStatus.COMPLETED
 
+
 class RecordingModelClient(ModelClient):
     def __init__(self) -> None:
         self.calls = 0

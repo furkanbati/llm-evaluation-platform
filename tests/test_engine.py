@@ -174,10 +174,10 @@ def test_engine_preserves_metric_order() -> None:
         metrics=["metric_two", "metric_one"],
     )
 
-    assert [
-        metric.metric_name
-        for metric in result.metrics
-    ] == ["metric_two", "metric_one"]
+    assert [metric.metric_name for metric in result.metrics] == [
+        "metric_two",
+        "metric_one",
+    ]
 
     assert result.overall_score == 0.5
 
@@ -209,7 +209,6 @@ def test_engine_raises_error_for_unknown_metric() -> None:
         raise AssertionError("Expected ValueError for unknown metric")
 
 
-
 def test_engine_runs_similarity_metric() -> None:
     registry = EvaluatorRegistry()
 
@@ -234,15 +233,9 @@ def test_engine_runs_similarity_metric() -> None:
     )
 
     assert len(result.metrics) == 1
-    assert (
-        result.metrics[0].metric_name
-        == "similarity"
-    )
+    assert result.metrics[0].metric_name == "similarity"
 
     assert result.overall_score == 1.0
-
-
-
 
 
 def test_engine_validate_metrics_accepts_registered_metrics() -> None:

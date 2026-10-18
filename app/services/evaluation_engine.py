@@ -24,15 +24,11 @@ class EvaluationEngine:
         available = set(self._registry.available_metrics())
 
         unknown = [
-            metric_name
-            for metric_name in metrics
-            if metric_name not in available
+            metric_name for metric_name in metrics if metric_name not in available
         ]
 
         if unknown:
-            raise ValueError(
-                f"Unknown metric: {', '.join(unknown)}"
-            )
+            raise ValueError(f"Unknown metric: {', '.join(unknown)}")
 
     def evaluate(
         self,
@@ -54,12 +50,8 @@ class EvaluationEngine:
 
             metric_results.append(metric_result)
 
-        overall_score = (
-            sum(
-                result.score
-                for result in metric_results
-            )
-            / len(metric_results)
+        overall_score = sum(result.score for result in metric_results) / len(
+            metric_results
         )
 
         return EvaluationResult(
@@ -68,5 +60,3 @@ class EvaluationEngine:
             metrics=metric_results,
             overall_score=overall_score,
         )
-
-

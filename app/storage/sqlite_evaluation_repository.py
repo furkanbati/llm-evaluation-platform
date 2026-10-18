@@ -132,11 +132,7 @@ class SQLiteEvaluationRepository(BaseEvaluationRepository):
             conditions.append("model_name = ?")
             parameters.append(model_name)
 
-        where = (
-            f"WHERE {' AND '.join(conditions)}"
-            if conditions
-            else ""
-        )
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         # SQLite treats a negative LIMIT as "no limit".
         parameters.extend(
@@ -153,7 +149,4 @@ class SQLiteEvaluationRepository(BaseEvaluationRepository):
                 parameters,
             ).fetchall()
 
-        return [
-            EvaluationRun.model_validate_json(row[0])
-            for row in rows
-        ]
+        return [EvaluationRun.model_validate_json(row[0]) for row in rows]

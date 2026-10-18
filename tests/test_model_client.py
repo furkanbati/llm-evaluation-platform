@@ -7,10 +7,7 @@ class FakeModelClient(ModelClient):
         model_name: str,
         inputs: list[str],
     ) -> list[str]:
-        return [
-            f"generated: {item}"
-            for item in inputs
-        ]
+        return [f"generated: {item}" for item in inputs]
 
 
 def test_model_client_generates_outputs() -> None:

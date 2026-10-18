@@ -56,8 +56,7 @@ app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,
     description=(
-        "REST API for evaluating Large Language Model "
-        "outputs against datasets."
+        "REST API for evaluating Large Language Model outputs against datasets."
     ),
     lifespan=lifespan,
 )
@@ -151,9 +150,7 @@ evaluation_runner = create_evaluation_runner(
     repository=evaluation_repository,
 )
 
-evaluation_summary_service = (
-    EvaluationSummaryService()
-)
+evaluation_summary_service = EvaluationSummaryService()
 
 
 @app.get(
@@ -224,9 +221,7 @@ def create_evaluation(
         metrics=request.metrics,
     )
 
-    response.headers["Location"] = (
-        f"/evaluations/{evaluation_run.id}"
-    )
+    response.headers["Location"] = f"/evaluations/{evaluation_run.id}"
 
     return evaluation_run.model_copy(deep=True)
 
@@ -334,4 +329,3 @@ def delete_evaluation(
     return Response(
         status_code=204,
     )
-

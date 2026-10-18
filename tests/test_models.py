@@ -247,7 +247,6 @@ def test_models_reject_invalid_types() -> None:
         )
 
 
-
 def test_evaluation_summary_accepts_valid_values() -> None:
     summary = EvaluationSummary(
         total_items=10,
@@ -263,6 +262,7 @@ def test_evaluation_summary_accepts_valid_values() -> None:
     assert summary.average_score == 0.8
     assert summary.success_rate == 0.8
 
+
 def test_metric_summary_accepts_valid_values() -> None:
     summary = MetricSummary(
         average_score=0.8,
@@ -271,5 +271,3 @@ def test_metric_summary_accepts_valid_values() -> None:
 
     assert summary.average_score == 0.8
     assert summary.pass_rate == 0.6
-
-

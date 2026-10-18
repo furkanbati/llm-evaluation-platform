@@ -47,15 +47,11 @@ class EvaluationRepository(BaseEvaluationRepository):
         """Return evaluations matching the provided filters."""
 
         with self._lock:
-            evaluations = list(
-                self._evaluations.values()
-            )
+            evaluations = list(self._evaluations.values())
 
         if status is not None:
             evaluations = [
-                evaluation
-                for evaluation in evaluations
-                if evaluation.status == status
+                evaluation for evaluation in evaluations if evaluation.status == status
             ]
 
         if model_name is not None:

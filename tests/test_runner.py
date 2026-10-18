@@ -172,4 +172,3 @@ def test_runner_sets_created_at_before_completed_at():
 
     assert run.completed_at is not None
     assert run.created_at <= run.completed_at
-

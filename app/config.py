@@ -22,7 +22,4 @@ DATABASE_PATH = os.getenv(
     "data/evaluations.db",
 )
 
-JUDGE_TEMPERATURE = float(
-    os.getenv("JUDGE_TEMPERATURE", "0.0")
-)
-
+JUDGE_TEMPERATURE = float(os.getenv("JUDGE_TEMPERATURE", "0.0"))

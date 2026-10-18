@@ -203,9 +203,12 @@ def test_delete_removes_saved_evaluation(repository) -> None:
     )
 
     assert deleted is True
-    assert repository.get(
-        evaluation.id,
-    ) is None
+    assert (
+        repository.get(
+            evaluation.id,
+        )
+        is None
+    )
 
 
 def test_delete_returns_false_for_unknown_id(repository) -> None:
@@ -215,6 +218,7 @@ def test_delete_returns_false_for_unknown_id(repository) -> None:
     )
 
     assert result is False
+
 
 def test_repository_handles_concurrent_saves_and_lists() -> None:
     repository = EvaluationRepository()
@@ -233,10 +237,7 @@ def test_repository_handles_concurrent_saves_and_lists() -> None:
         except Exception as exc:
             errors.append(exc)
 
-    threads = [
-        threading.Thread(target=worker)
-        for _ in range(8)
-    ]
+    threads = [threading.Thread(target=worker) for _ in range(8)]
 
     for thread in threads:
         thread.start()
@@ -250,8 +251,7 @@ def test_repository_handles_concurrent_saves_and_lists() -> None:
 
 def test_list_supports_limit_and_offset(repository) -> None:
     evaluations = [
-        create_evaluation_run(model_name=f"model-{index}")
-        for index in range(5)
+        create_evaluation_run(model_name=f"model-{index}") for index in range(5)
     ]
 
     for evaluation in evaluations:
@@ -380,10 +380,7 @@ def test_sqlite_repository_handles_concurrent_saves(tmp_path) -> None:
         except Exception as exc:
             errors.append(exc)
 
-    threads = [
-        threading.Thread(target=worker)
-        for _ in range(4)
-    ]
+    threads = [threading.Thread(target=worker) for _ in range(4)]
 
     for thread in threads:
         thread.start()

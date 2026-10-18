@@ -62,6 +62,7 @@ def test_ollama_model_client_connects_to_real_ollama() -> None:
     assert len(outputs) == 1
     assert outputs[0]
 
+
 def _capture_post(
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict]:

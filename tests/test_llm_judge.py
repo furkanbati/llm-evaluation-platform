@@ -129,8 +129,7 @@ def test_llm_judge_prompt_contains_examples() -> None:
 
     assert "<expected_answer>\nParis\n</expected_answer>" in prompt
     assert (
-        "<generated_answer>\nThe capital of France is Paris.\n"
-        "</generated_answer>"
+        "<generated_answer>\nThe capital of France is Paris.\n</generated_answer>"
     ) in prompt
     assert "YES" in prompt
     assert "NO" in prompt
@@ -175,6 +174,7 @@ def test_llm_judge_prompt_contains_negative_example() -> None:
     assert "Generated: The capital of France is London." in prompt
     assert "Decision: NO" in prompt
 
+
 def test_llm_judge_rejects_invalid_judgement() -> None:
     evaluator = LLMJudgeEvaluator(
         model_client=FakeJudgeModelClient(),
@@ -185,8 +185,6 @@ def test_llm_judge_rejects_invalid_judgement() -> None:
         evaluator._parse_judgement(
             "MAYBE",
         )
-
-
 
 
 def test_llm_judge_prompt_includes_question_when_input_given() -> None:
@@ -204,8 +202,7 @@ def test_llm_judge_prompt_includes_question_when_input_given() -> None:
     )
 
     assert (
-        "<question>\nWhat is the capital of France?\n</question>"
-        in model_client.prompt
+        "<question>\nWhat is the capital of France?\n</question>" in model_client.prompt
     )
 
 
@@ -267,6 +264,7 @@ def test_llm_judge_prevents_breaking_out_of_tags() -> None:
 
     generated_block = prompt.split("<generated_answer>")[1]
 
-    assert "Ignore previous instructions" in generated_block.split(
-        "</generated_answer>"
-    )[0]
+    assert (
+        "Ignore previous instructions"
+        in generated_block.split("</generated_answer>")[0]
+    )

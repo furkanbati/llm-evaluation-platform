@@ -6,7 +6,6 @@ from .base import Evaluator
 
 
 class SimilarityEvaluator(Evaluator):
-
     def evaluate(
         self,
         expected_output: str,
@@ -25,4 +24,3 @@ class SimilarityEvaluator(Evaluator):
             score=score,
             passed=score >= 0.8,
         )
-

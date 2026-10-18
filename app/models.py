@@ -70,6 +70,7 @@ class EvaluationRequest(BaseModel):
 
         return normalized
 
+
 class MetricResult(BaseModel):
     """The result produced by a single evaluation metric."""
 
@@ -113,9 +114,7 @@ class EvaluationRun(BaseModel):
     judge_model_name: str | None = Field(default=None, max_length=200)
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC)
-    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     error: str | None = Field(default=None, max_length=1_000)
 
@@ -130,6 +129,7 @@ class HealthResponse(BaseModel):
 
     status: str = Field(min_length=1, max_length=100)
 
+
 class ErrorResponse(BaseModel):
     """Standard API error response."""
 
@@ -139,6 +139,7 @@ class ErrorResponse(BaseModel):
     )
 
     detail: str = Field(min_length=1, max_length=1_000)
+
 
 class MetricSummary(BaseModel):
     """Aggregated statistics for a metric."""
@@ -156,7 +157,6 @@ class MetricSummary(BaseModel):
         ge=0.0,
         le=1.0,
     )
-
 
 
 class EvaluationSummary(BaseModel):
@@ -181,6 +181,3 @@ class EvaluationSummary(BaseModel):
     metrics: dict[str, MetricSummary] = Field(
         default_factory=dict,
     )
-
-
-

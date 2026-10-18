@@ -25,6 +25,7 @@ def test_ollama_base_url_uses_environment_variable(
 
     assert config.OLLAMA_BASE_URL == "http://localhost:11434"
 
+
 def test_judge_model_name_uses_default_when_environment_variable_is_missing(
     monkeypatch,
 ) -> None:
@@ -49,7 +50,6 @@ def test_judge_model_name_uses_environment_variable(
     importlib.reload(config)
 
     assert config.JUDGE_MODEL_NAME == "judge-model"
-
 
 
 def test_judge_temperature_defaults_to_zero(

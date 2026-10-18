@@ -1,4 +1,3 @@
-
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -27,6 +26,7 @@ class FakeModelClient(ModelClient):
     ) -> list[str]:
         return ["4"]
 
+
 class FakeEvaluationWithJudgeModelClient(ModelClient):
     def generate(
         self,
@@ -37,6 +37,7 @@ class FakeEvaluationWithJudgeModelClient(ModelClient):
             return ["YES"]
 
         return ["4"]
+
 
 def test_health() -> None:
     client = TestClient(app)
@@ -88,9 +89,7 @@ def test_create_evaluation(
     assert accepted["status"] == "pending"
     assert accepted["results"] == []
     assert accepted["completed_at"] is None
-    assert response.headers["location"] == (
-        f"/evaluations/{accepted['id']}"
-    )
+    assert response.headers["location"] == (f"/evaluations/{accepted['id']}")
 
     response = client.get(
         f"/evaluations/{accepted['id']}",
@@ -346,9 +345,7 @@ def test_create_evaluation_returns_json_for_internal_errors(
     )
 
     assert response.status_code == 500
-    assert response.headers["content-type"].startswith(
-        "application/json"
-    )
+    assert response.headers["content-type"].startswith("application/json")
     assert response.json() == {
         "detail": "Internal server error",
     }
@@ -492,6 +489,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "completed_at",
         "error",
     }
+
 
 def test_list_evaluations_returns_saved_evaluations(
     monkeypatch,
@@ -785,9 +783,7 @@ def test_list_evaluations_filters_by_status_and_model_name(
     client = TestClient(app)
 
     response = client.get(
-        "/evaluations"
-        "?status=completed"
-        "&model_name=llama3",
+        "/evaluations?status=completed&model_name=llama3",
     )
 
     assert response.status_code == 200
@@ -910,11 +906,7 @@ def test_list_evaluations_applies_filters_before_pagination(
     client = TestClient(app)
 
     response = client.get(
-        "/evaluations"
-        "?status=completed"
-        "&model_name=llama3"
-        "&limit=1"
-        "&offset=1",
+        "/evaluations?status=completed&model_name=llama3&limit=1&offset=1",
     )
 
     assert response.status_code == 200
@@ -937,16 +929,11 @@ def test_openapi_contains_application_metadata() -> None:
 
     data = response.json()
 
-    assert data["info"]["title"] == (
-        "LLM Evaluation Platform"
-    )
+    assert data["info"]["title"] == ("LLM Evaluation Platform")
 
     assert data["info"]["version"] == "1.0.0"
 
-    assert (
-        "evaluating Large Language Model outputs"
-        in data["info"]["description"]
-    )
+    assert "evaluating Large Language Model outputs" in data["info"]["description"]
 
 
 def test_create_evaluation_supports_similarity_metric(
@@ -991,10 +978,7 @@ def test_create_evaluation_supports_similarity_metric(
 
     data = response.json()
 
-    assert (
-        data["results"][0]["metrics"][0]["metric_name"]
-        == "similarity"
-    )
+    assert data["results"][0]["metrics"][0]["metric_name"] == "similarity"
 
 
 def test_list_metrics_returns_available_metrics() -> None:
@@ -1020,10 +1004,8 @@ def test_create_evaluation_runner_registers_llm_judge() -> None:
         model_client=FakeModelClient(),
     )
 
-    assert (
-        runner._engine._registry.get("llm_judge")
-        is not None
-    )
+    assert runner._engine._registry.get("llm_judge") is not None
+
 
 def test_create_evaluation_supports_llm_judge_metric(
     monkeypatch,
@@ -1075,7 +1057,6 @@ def test_create_evaluation_supports_llm_judge_metric(
     assert metric["metric_name"] == "llm_judge"
     assert metric["score"] == 1.0
     assert metric["passed"] is True
-
 
 
 def test_default_runner_uses_deterministic_judge_client() -> None:

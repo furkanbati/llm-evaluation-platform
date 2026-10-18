@@ -82,9 +82,7 @@ class EvaluationRunner:
         )
 
         judge_model_name = (
-            self._judge_model_name
-            if LLM_JUDGE_METRIC in metrics
-            else None
+            self._judge_model_name if LLM_JUDGE_METRIC in metrics else None
         )
 
         evaluation_run = EvaluationRun(
@@ -117,10 +115,7 @@ class EvaluationRunner:
 
         try:
             if generated_outputs is None:
-                inputs = [
-                    item.input
-                    for item in dataset.items
-                ]
+                inputs = [item.input for item in dataset.items]
 
                 generated_outputs = self._model_client.generate(
                     model_name=evaluation_run.model_name,
@@ -207,14 +202,11 @@ class EvaluationRunner:
         if generated_outputs is None:
             if self._model_client is None:
                 raise ValueError(
-                    "Model client is required when generated outputs "
-                    "are not provided"
+                    "Model client is required when generated outputs are not provided"
                 )
 
         elif len(dataset.items) != len(generated_outputs):
-            raise ValueError(
-                "Number of generated outputs must match dataset items"
-            )
+            raise ValueError("Number of generated outputs must match dataset items")
 
     @staticmethod
     def _format_error(exc: Exception) -> str:
