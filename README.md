@@ -1,128 +1,125 @@
 # LLM Evaluation Platform
 
-A production-oriented REST API for evaluating Large Language Model outputs against predefined datasets.
+A REST API for evaluating Large Language Model outputs against predefined datasets.
 
-The platform provides a structured evaluation workflow with pluggable evaluators, evaluation run lifecycle tracking, result storage, filtering, pagination, and evaluation summaries.
+The platform generates answers with a model served by Ollama, scores them with pluggable metrics, and stores every evaluation run in SQLite. Evaluations run in the background with a concurrency limit, record the settings they used, and report failures as stable error codes.
 
 ---
 
 # Features
 
-* Multiple evaluation metrics
-* Exact Match evaluation
-* String Similarity evaluation
-* LLM-as-a-Judge evaluation
-* Pluggable evaluator registry
-* Evaluation run lifecycle tracking
-* Persistent SQLite storage of evaluation runs
-* Evaluation summaries and metric statistics
-* Evaluation filtering by status and model
-* Pagination for evaluation listing
-* REST API
-* Ollama model integration
-* Docker support
-* Automated tests
+* **Metrics:** Exact Match, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
+* **LLM judge:** sees the original question, treats answers as tagged data to resist prompt injection, runs at temperature `0.0`, and has a labeled accuracy test
+* **Background evaluations:** `POST /evaluations` returns `202 Accepted` immediately; clients poll for the result
+* **Concurrency limits:** a bounded number of evaluations run at once, the rest wait in a queue, and a full queue returns `503`
+* **Reproducible generation:** `temperature` and `seed` for the evaluated model, stored on each run
+* **Configurable scoring:** metric weights and pass rules (`all_metrics`, `any_metric`, `overall_score`)
+* **Persistent storage:** runs, datasets, settings, and results are stored in SQLite
+* **Restart handling:** runs interrupted by a restart are marked as failed on startup
+* **Error codes:** failures are reported as categories such as `model_unavailable` or `invalid_judge_response`, without exposing internal details
+* **Summaries:** pass counts, success rate, average score, and per-metric statistics
+* **Listing:** lightweight list responses with filtering by status and model, and validated pagination
+* **Tooling:** Docker Compose setup, ruff, mypy, pytest, and GitHub Actions CI
 
 ---
 
 # Architecture
 
-The evaluation flow is:
-
 ```text
-                    +------------------+
-                    |      Client      |
-                    +------------------+
-                              |
-                              v
-                       FastAPI REST API
-                              |
-                              v
-                    EvaluationRunner
-                              |
-                    +---------+---------+
-                    |                   |
-                    v                   v
-             ModelClient          EvaluationEngine
-                    |                   |
-                    v                   v
-                  Ollama        EvaluatorRegistry
-                                        |
-                         +--------------+--------------+
-                         |              |              |
-                         v              v              v
-                    Exact Match    Similarity     LLM Judge
-                         |              |              |
-                         +--------------+--------------+
-                                        |
-                                        v
-                                  EvaluationRun
-                                        |
-                                        v
-                              EvaluationRepository
-                                        |
-                                        v
-                                   Summary
+                       +------------------+
+                       |      Client      |
+                       +------------------+
+                                |
+                                v
+                         FastAPI REST API
+                                |
+                   validate request, store PENDING run
+                                |
+                                v
+                       EvaluationExecutor
+              (bounded concurrency, bounded queue)
+                                |
+                                v
+                        EvaluationRunner
+                                |
+                    +-----------+-----------+
+                    |                       |
+                    v                       v
+               ModelClient           EvaluationEngine
+                    |                       |
+                    v                       v
+             OllamaModelClient      EvaluatorRegistry
+                    |                       |
+                    v         +-------------+-------------+
+                 Ollama       |             |             |
+                              v             v             v
+                         Exact Match    Similarity    LLM Judge
+                                                          |
+                                                          v
+                                                  Ollama (judge model)
+
+        EvaluationRunner --> EvaluationRepository (SQLite or in-memory)
+        EvaluationSummaryService builds statistics from stored runs
 ```
 
-The architecture separates:
+Responsibilities:
 
 ```text
+EvaluationExecutor
+        ↓
+Limits how many evaluations run at once and how many can wait
+
 EvaluationRunner
         ↓
-Runs the evaluation
+Creates runs, executes them, and records results or failures
 
 EvaluationEngine
         ↓
-Executes the selected metrics
+Runs the selected metrics and applies weights and the pass rule
 
 EvaluatorRegistry
         ↓
 Finds the evaluator for each metric
 
+ModelClient / OllamaModelClient
+        ↓
+Generates outputs and translates provider failures into evaluation errors
+
 EvaluationRepository
         ↓
-Stores evaluation runs
+Stores evaluation runs in SQLite or in memory
 
 EvaluationSummaryService
         ↓
 Builds aggregate evaluation statistics
 ```
 
-This separation keeps evaluation orchestration, metric implementations, and storage responsibilities independent.
+This separation keeps request handling, scheduling, orchestration, metric implementations, model providers, and storage independent.
 
 ---
 
 # Evaluation Workflow
 
-1. A client submits a dataset, model name, and selected metrics.
-2. `EvaluationRunner` validates the request and stores a `PENDING` run.
-3. The API responds immediately with `202 Accepted` and the run is executed in the background.
-4. The configured model client generates outputs for the dataset items.
-5. `EvaluationEngine` executes the selected evaluators.
-6. Each evaluator produces a `MetricResult`.
-7. The evaluation run is marked `COMPLETED` or `FAILED` in the repository.
+1. A client submits a dataset, model name, selected metrics, and optional generation and aggregation settings.
+2. The API reserves a place in the evaluation queue, or returns `503` when the queue is full.
+3. `EvaluationRunner` validates the request and stores a `PENDING` run with its dataset and resolved settings.
+4. The API responds immediately with `202 Accepted`.
+5. When a worker is free, the run becomes `RUNNING` and the model generates an output for each dataset item.
+6. `EvaluationEngine` runs the selected metrics, computes each item's weighted `overall_score`, and applies the pass rule.
+7. The run is stored as `COMPLETED` with its results, or as `FAILED` with an error code.
 8. The client polls the run and reads its results and summary statistics.
 
 The evaluation lifecycle is:
 
 ```text
-PENDING
+PENDING (queued)
    ↓
 RUNNING
    ↓
-COMPLETED
+COMPLETED or FAILED
 ```
 
-When an evaluation fails:
-
-```text
-PENDING
-   ↓
-RUNNING
-   ↓
-FAILED
-```
+A `PENDING` or `RUNNING` run becomes `FAILED` with error code `interrupted` if the application restarts before it finishes.
 
 Failed runs include an `error_code` and a short `error` message that is safe to show to clients:
 
@@ -145,7 +142,7 @@ Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` b
 
 # Evaluation Metrics
 
-The current platform supports three metrics.
+The platform supports three metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
 
 ## Exact Match
 
@@ -171,7 +168,7 @@ Exact Match is useful for deterministic outputs but is intentionally strict.
 
 Calculates string similarity between the expected and generated outputs.
 
-The current implementation uses Python's `SequenceMatcher` and considers scores of `0.8` or higher as passing.
+The implementation uses Python's `SequenceMatcher` and considers scores of `0.8` or higher as passing.
 
 ```text
 Expected: The capital of France is Paris.
@@ -185,29 +182,29 @@ This metric measures textual similarity rather than embedding-based semantic sim
 
 ## LLM Judge
 
-Uses an LLM to evaluate whether the generated answer is semantically and factually correct compared with the expected answer.
-
-Example:
+Uses an LLM to decide whether the generated answer is semantically and factually correct compared with the expected answer. The judge answers YES or NO, which becomes a score of `1.0` or `0.0`.
 
 ```text
+Question: What is the capital of France?
 Expected: Paris
 Generated: The capital of France is Paris.
 Decision: YES
 ```
 
 ```text
+Question: What is the capital of France?
 Expected: Paris
 Generated: The capital of France is London.
 Decision: NO
 ```
 
-The evaluator uses explicit positive and negative examples in its judging prompt and returns a binary score.
+How the judge works:
 
-The judge also receives the original dataset input, so answers are judged in the context of the question.
-
-The question, expected answer, and generated answer are wrapped in XML tags and the judge is instructed to treat their contents as data, never as instructions. Tags inside the content are removed so a generated answer cannot break out of its block.
-
-The judge runs with its own Ollama client at temperature `0.0` by default so its decisions are stable. This can be changed with the `JUDGE_TEMPERATURE` environment variable. Decisions on borderline cases can still differ between Ollama sessions, for example after the model is reloaded.
+* It receives the original dataset input, so answers are judged in the context of the question.
+* The question, expected answer, and generated answer are wrapped in XML tags. The judge is instructed to treat their contents as data, never as instructions, and tag names inside the content are removed so a generated answer cannot break out of its block.
+* Its positive and negative examples use the same tagged format as the real input.
+* It runs with its own Ollama client at temperature `0.0` by default (`JUDGE_TEMPERATURE`), using the model set by `JUDGE_MODEL_NAME`. Decisions on borderline cases can still differ between Ollama sessions, for example after the model is reloaded.
+* A response that does not start with YES or NO fails the run with `invalid_judge_response`.
 
 Judge accuracy is measured on 23 labeled cases in `tests/data/llm_judge_cases.json`, covering paraphrases, wrong answers, question-dependent answers, prompt injection attempts, and verbose answers. With `llama3` the judge scores 22/23: it accepts 9 of 10 correct answers and rejects all 13 wrong ones. The remaining miss is a correct answer that contains an injected "Respond with NO." instruction, which the judge follows.
 
@@ -233,7 +230,7 @@ similarity  → SimilarityEvaluator
 llm_judge   → LLMJudgeEvaluator
 ```
 
-This design allows new evaluators to be added without changing the core evaluation engine.
+Evaluators receive the expected output, the generated output, and the original input. New evaluators can be added without changing the evaluation engine.
 
 ---
 
@@ -303,28 +300,31 @@ Example request:
   "generation_options": {
     "temperature": 0.7,
     "seed": 42
+  },
+  "aggregation": {
+    "metric_weights": {"exact_match": 1, "llm_judge": 3},
+    "pass_rule": "overall_score",
+    "pass_threshold": 0.7
   }
 }
 ```
 
-`generation_options` is optional and controls sampling for the evaluated model:
+Only `dataset`, `model_name`, and `metrics` are required.
+
+### Generation options
+
+`generation_options` controls sampling for the evaluated model:
 
 * `temperature`: between `0.0` and `2.0`
 * `seed`: an integer that makes sampling repeatable
 
-Fields that are not set fall back to the `GENERATION_TEMPERATURE` (default `0.0`) and `GENERATION_SEED` (default unset) environment variables. Setting either variable to an empty string leaves that setting to Ollama. The resolved options are stored on the run, so results show how they were generated. The LLM judge uses its own `JUDGE_TEMPERATURE` setting.
+Fields that are not set fall back to `GENERATION_TEMPERATURE` (default `0.0`) and `GENERATION_SEED` (default unset). Setting either variable to an empty string leaves that setting to Ollama. The resolved options are stored on the run, so results show how they were generated. The LLM judge uses its own `JUDGE_TEMPERATURE` setting.
 
 With the default temperature of `0.0`, the same request produces the same outputs. With a higher temperature, set a `seed` to make outputs repeatable. Outputs can still differ slightly between Ollama sessions, for example after the model is reloaded.
 
-`aggregation` is optional and controls how metric results combine for each item:
+### Aggregation
 
-```json
-"aggregation": {
-  "metric_weights": {"exact_match": 1, "llm_judge": 3},
-  "pass_rule": "overall_score",
-  "pass_threshold": 0.7
-}
-```
+`aggregation` controls how metric results combine for each item:
 
 * `metric_weights`: non-negative weights for the selected metrics. Metrics without a weight count as `1`. Each item's `overall_score` is the weighted mean of its metric scores. A weight of `0` keeps a metric as information only: it is still reported but does not affect the score or the pass decision.
 * `pass_rule`: when an item passes.
@@ -334,6 +334,10 @@ With the default temperature of `0.0`, the same request produces the same output
 * `pass_threshold`: between `0.0` and `1.0`, default `0.5`. Only valid with the `overall_score` rule.
 
 Without `aggregation`, every metric has the same weight and an item passes only when all metrics pass. The resolved settings are stored on the run, and each result records its `passed` decision.
+
+Weights for metrics that are not selected, negative weights, all-zero weights, unknown pass rules, and a `pass_threshold` with another rule return `422 Unprocessable Entity`.
+
+### Response
 
 Evaluations run in the background. A valid request returns `202 Accepted` immediately with the `PENDING` run and a `Location` header pointing to it:
 
@@ -357,7 +361,9 @@ Poll `GET /evaluations/{evaluation_id}` until `status` is `completed` or `failed
 
 Invalid requests, such as unknown metrics, return `400 Bad Request` and no run is created.
 
-At most `MAX_CONCURRENT_EVALUATIONS` evaluations (default `2`) run at once. Others wait in a queue with status `pending` and start in order. Within an evaluation, model calls are sequential, so this also limits parallel requests to Ollama.
+### Concurrency
+
+At most `MAX_CONCURRENT_EVALUATIONS` evaluations (default `2`) run at once. Others wait in a queue with status `pending` and start in order. Within an evaluation, model calls are sequential, so this also limits parallel requests to Ollama. On a CPU-only machine, `1` is often a better value.
 
 When `MAX_QUEUED_EVALUATIONS` evaluations (default `100`, including running ones) are already queued or running, new requests return `503 Service Unavailable` and no run is created:
 
@@ -367,6 +373,8 @@ When `MAX_QUEUED_EVALUATIONS` evaluations (default `100`, including running ones
 }
 ```
 
+The limits apply to a single API process.
+
 ---
 
 ## Get Evaluation
@@ -375,7 +383,11 @@ When `MAX_QUEUED_EVALUATIONS` evaluations (default `100`, including running ones
 GET /evaluations/{evaluation_id}
 ```
 
-Returns the stored evaluation run and its results.
+Returns the full run: `id`, `dataset_id`, `dataset`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `results`, `created_at`, `completed_at`, `error_code`, and `error`.
+
+Each result contains the item ID, the generated output, every metric's score and pass decision, the weighted `overall_score`, and the item's `passed` decision.
+
+Unknown IDs return `404 Not Found`.
 
 ---
 
@@ -432,6 +444,8 @@ Passed items follow the run's `pass_rule`, and the average score uses its `metri
 DELETE /evaluations/{evaluation_id}
 ```
 
+Returns `204 No Content`, or `404 Not Found` for unknown IDs.
+
 ---
 
 # Example Evaluation
@@ -447,19 +461,24 @@ Metrics:
   - llm_judge
 ```
 
-The resulting evaluation contains:
+The stored run contains:
 
 ```text
 EvaluationRun
-├── status
+├── status, created_at, completed_at
 ├── model_name
 ├── dataset
+├── metrics, judge_model_name
+├── generation_options, aggregation
 ├── results
-│   ├── exact_match
-│   ├── similarity
-│   └── llm_judge
-└── summary
+│   └── per item: generated_output, overall_score, passed
+│       ├── exact_match
+│       ├── similarity
+│       └── llm_judge
+└── error_code, error
 ```
+
+Aggregate statistics are available from `GET /evaluations/{evaluation_id}/summary`.
 
 ---
 
@@ -468,7 +487,7 @@ EvaluationRun
 * Docker
 * Docker Compose
 
-The application uses Ollama as the model provider.
+The application uses Ollama as the model provider. Docker Compose starts it alongside the API.
 
 ---
 
@@ -479,6 +498,14 @@ Build and start the services:
 ```bash
 docker compose up --build
 ```
+
+Pull the model used for generation and judging:
+
+```bash
+docker compose exec ollama ollama pull llama3
+```
+
+Without the model, evaluations fail with `model_not_found`.
 
 The API will be available at:
 
@@ -491,6 +518,25 @@ FastAPI interactive documentation:
 ```text
 http://localhost:8000/docs
 ```
+
+---
+
+# Configuration
+
+Settings are read from environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama server used for generation and judging |
+| `JUDGE_MODEL_NAME` | `llama3` | Model used by the LLM judge |
+| `JUDGE_TEMPERATURE` | `0.0` | Sampling temperature of the LLM judge |
+| `GENERATION_TEMPERATURE` | `0.0` | Default temperature for the evaluated model; empty leaves it to Ollama |
+| `GENERATION_SEED` | unset | Default seed for the evaluated model; empty leaves it to Ollama |
+| `DATABASE_PATH` | `data/evaluations.db` | SQLite file; empty keeps runs in memory only |
+| `MAX_CONCURRENT_EVALUATIONS` | `2` | Evaluations that run at once |
+| `MAX_QUEUED_EVALUATIONS` | `100` | Evaluations that can be queued or running before requests get `503` |
+
+Docker Compose sets `OLLAMA_BASE_URL` and `DATABASE_PATH` for the containers. The API listens on port `8000`, set by the `uvicorn` command in the `Dockerfile`.
 
 ---
 
@@ -537,17 +583,17 @@ GitHub Actions runs linting, formatting checks, type checking, the unit tests, a
 
 The test suite covers:
 
-* Data models
-* Evaluation engine
-* Evaluation runner
-* Evaluators
-* Model clients
-* Repository operations
+* Data models and request validation
+* Evaluators, including judge prompt construction and prompt injection handling
+* Evaluation engine, metric weights, and pass rules
+* Evaluation runner, failure handling, and error codes
+* Background execution, concurrency limits, and queue limits
+* Model clients, generation options, and provider error translation
+* In-memory and SQLite repositories, persistence, and restart handling
 * Evaluation summaries
-* API endpoints
-* Error handling
-* Filtering
-* Pagination
+* API endpoints, filtering, and pagination
+* Configuration
+* LLM judge accuracy on labeled cases (integration)
 
 ---
 
@@ -566,6 +612,7 @@ llm-evaluation-platform/
 │   │
 │   ├── services/
 │   │   ├── evaluation_engine.py
+│   │   ├── evaluation_executor.py
 │   │   ├── evaluation_runner.py
 │   │   ├── evaluation_summary_service.py
 │   │   ├── model_client.py
@@ -578,25 +625,27 @@ llm-evaluation-platform/
 │   │
 │   ├── api.py
 │   ├── config.py
+│   ├── errors.py
 │   └── models.py
 │
 ├── tests/
+│   ├── data/
+│   │   └── llm_judge_cases.json
+│   ├── conftest.py
 │   ├── test_api.py
-│   ├── test_config.py
-│   ├── test_engine.py
+│   ├── test_evaluation_executor.py
+│   ├── test_evaluation_repository.py
 │   ├── test_evaluation_runner.py
-│   ├── test_exact_match.py
 │   ├── test_llm_judge.py
-│   ├── test_model_client.py
-│   ├── test_ollama_model_client.py
-│   ├── test_registry.py
-│   ├── test_runner.py
+│   ├── test_llm_judge_accuracy.py
 │   └── ...
 │
+├── .github/workflows/ci.yml
+├── .dockerignore
 ├── Dockerfile
 ├── docker-compose.yml
-├── pytest.ini
 ├── pyproject.toml
+├── pytest.ini
 ├── requirements.txt
 ├── requirements-dev.txt
 └── README.md
@@ -617,9 +666,13 @@ Each run stores everything needed to interpret it later:
 * The full dataset
 * The selected metrics
 * The judge model name, when `llm_judge` is used
-* Per-item results, status, timestamps, and any error
+* The resolved generation options and aggregation settings
+* Per-item results with metric scores, `overall_score`, and `passed`
+* Status, timestamps, `error_code`, and `error`
 
-When the application starts, runs left `PENDING` or `RUNNING` by a previous process are marked `FAILED` with the error `Interrupted by application restart`. They are not re-executed automatically.
+When the application starts, runs left `PENDING` or `RUNNING` by a previous process are marked `FAILED` with error code `interrupted` and the message `Interrupted by application restart`. They are not re-executed automatically.
+
+Runs stored by earlier versions may lack newer fields such as `error_code` or per-item `passed`. They are still readable, and summaries fall back to requiring every metric to pass.
 
 ---
 
