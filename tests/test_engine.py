@@ -242,3 +242,38 @@ def test_engine_runs_similarity_metric() -> None:
 
 
 
+
+
+def test_engine_validate_metrics_accepts_registered_metrics() -> None:
+    registry = EvaluatorRegistry()
+
+    registry.register(
+        "exact_match",
+        ExactMatchEvaluator(),
+    )
+
+    engine = EvaluationEngine(registry)
+
+    engine.validate_metrics(["exact_match"])
+
+
+def test_engine_validate_metrics_lists_all_unknown_metrics() -> None:
+    registry = EvaluatorRegistry()
+
+    registry.register(
+        "exact_match",
+        ExactMatchEvaluator(),
+    )
+
+    engine = EvaluationEngine(registry)
+
+    try:
+        engine.validate_metrics(
+            ["exact_match", "unknown_a", "unknown_b"],
+        )
+    except ValueError as exc:
+        assert "unknown_a" in str(exc)
+        assert "unknown_b" in str(exc)
+        assert "exact_match" not in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unknown metrics")

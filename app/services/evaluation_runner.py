@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from app.models import (
@@ -8,6 +9,11 @@ from app.models import (
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.model_client import ModelClient
 from app.storage.evaluation_repository import EvaluationRepository
+
+
+logger = logging.getLogger(__name__)
+
+MAX_ERROR_LENGTH = 1_000
 
 
 class EvaluationRunner:
@@ -35,7 +41,17 @@ class EvaluationRunner:
         metrics: list[str],
         generated_outputs: list[str] | None = None,
     ) -> EvaluationRun:
-        """Evaluate all dataset items and return an evaluation run."""
+        """Evaluate all dataset items and return an evaluation run.
+
+        Invalid requests raise ValueError before a run is created.
+        Failures during execution are recorded on a FAILED run.
+        """
+
+        self._validate_request(
+            dataset=dataset,
+            metrics=metrics,
+            generated_outputs=generated_outputs,
+        )
 
         evaluation_run = EvaluationRun(
             dataset_id=dataset.id,
@@ -50,12 +66,6 @@ class EvaluationRunner:
 
         try:
             if generated_outputs is None:
-                if self._model_client is None:
-                    raise ValueError(
-                        "Model client is required when generated outputs "
-                        "are not provided"
-                    )
-
                 inputs = [
                     item.input
                     for item in dataset.items
@@ -66,10 +76,12 @@ class EvaluationRunner:
                     inputs=inputs,
                 )
 
-            if len(dataset.items) != len(generated_outputs):
-                raise ValueError(
-                    "Number of generated outputs must match dataset items"
-                )
+                if len(dataset.items) != len(generated_outputs):
+                    raise ValueError(
+                        "Model client returned "
+                        f"{len(generated_outputs)} outputs "
+                        f"for {len(dataset.items)} dataset items"
+                    )
 
             results = []
 
@@ -92,12 +104,40 @@ class EvaluationRunner:
 
             return self._repository.save(evaluation_run)
 
-        except ValueError:
-            raise
+        except Exception as exc:
+            logger.exception(
+                "Evaluation run %s failed",
+                evaluation_run.id,
+            )
 
-        except Exception:
             evaluation_run.status = EvaluationStatus.FAILED
+            evaluation_run.error = self._format_error(exc)
             evaluation_run.completed_at = datetime.now(timezone.utc)
 
             return self._repository.save(evaluation_run)
 
+    def _validate_request(
+        self,
+        dataset: Dataset,
+        metrics: list[str],
+        generated_outputs: list[str] | None,
+    ) -> None:
+        self._engine.validate_metrics(metrics)
+
+        if generated_outputs is None:
+            if self._model_client is None:
+                raise ValueError(
+                    "Model client is required when generated outputs "
+                    "are not provided"
+                )
+
+        elif len(dataset.items) != len(generated_outputs):
+            raise ValueError(
+                "Number of generated outputs must match dataset items"
+            )
+
+    @staticmethod
+    def _format_error(exc: Exception) -> str:
+        message = str(exc) or type(exc).__name__
+
+        return message[:MAX_ERROR_LENGTH]
