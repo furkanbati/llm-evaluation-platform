@@ -25,6 +25,8 @@ from app.config import (
 )
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.llm_judge import LLMJudgeEvaluator
+from app.evaluators.normalized_match import NormalizedMatchEvaluator
+from app.evaluators.numeric_match import NumericMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.evaluators.similarity import SimilarityEvaluator
 from app.models import (
@@ -122,6 +124,16 @@ def create_evaluation_runner(
         SimilarityEvaluator(),
     )
 
+    registry.register(
+        "normalized_match",
+        NormalizedMatchEvaluator(),
+    )
+
+    registry.register(
+        "numeric_match",
+        NumericMatchEvaluator(),
+    )
+
     if judge_model_client is None:
         if model_client is None:
             judge_model_client = OllamaModelClient(
@@ -189,11 +201,7 @@ def health() -> HealthResponse:
 )
 def list_metrics() -> dict[str, list[str]]:
     return {
-        "metrics": [
-            "exact_match",
-            "similarity",
-            "llm_judge",
-        ],
+        "metrics": evaluation_runner.available_metrics(),
     }
 
 

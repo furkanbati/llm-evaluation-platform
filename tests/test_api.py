@@ -1000,8 +1000,10 @@ def test_list_metrics_returns_available_metrics() -> None:
     assert response.json() == {
         "metrics": [
             "exact_match",
-            "similarity",
             "llm_judge",
+            "normalized_match",
+            "numeric_match",
+            "similarity",
         ],
     }
 
