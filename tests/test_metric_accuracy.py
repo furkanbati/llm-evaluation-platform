@@ -68,3 +68,28 @@ def test_numeric_match_is_correct_on_numeric_cases() -> None:
 
     assert len(cases) == 7
     assert wrong_decisions(evaluator, cases) == []
+
+
+def test_token_f1_accuracy_on_labeled_cases() -> None:
+    # Most correct answers here are full sentences, which lower precision,
+    # so token_f1 accepts few of them; it suits short extractive answers.
+    # Its false positive is a partial answer ("Red and blue").
+    from app.evaluators.token_f1 import TokenF1Evaluator
+
+    cases = load_cases()
+    evaluator = TokenF1Evaluator()
+
+    wrong = wrong_decisions(evaluator, cases)
+
+    accepted_wrong = [
+        case["id"]
+        for case in cases
+        if case["expected_decision"] == "NO"
+        and evaluator.evaluate(
+            expected_output=case["expected_output"],
+            generated_output=case["generated_output"],
+        ).passed
+    ]
+
+    assert len(cases) - len(wrong) >= 13, wrong
+    assert accepted_wrong == ["wrong-7"]
