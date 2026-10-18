@@ -8,12 +8,17 @@ from app.models import (
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.model_client import ModelClient
+from app.storage.base import BaseEvaluationRepository
 from app.storage.evaluation_repository import EvaluationRepository
 
 
 logger = logging.getLogger(__name__)
 
 MAX_ERROR_LENGTH = 1_000
+
+LLM_JUDGE_METRIC = "llm_judge"
+
+INTERRUPTED_ERROR = "Interrupted by application restart"
 
 
 class EvaluationRunner:
@@ -23,14 +28,16 @@ class EvaluationRunner:
         self,
         engine: EvaluationEngine,
         model_client: ModelClient | None = None,
-        repository: EvaluationRepository | None = None,
+        repository: BaseEvaluationRepository | None = None,
+        judge_model_name: str | None = None,
     ) -> None:
         self._engine = engine
         self._model_client = model_client
         self._repository = repository or EvaluationRepository()
+        self._judge_model_name = judge_model_name
 
     @property
-    def repository(self) -> EvaluationRepository:
+    def repository(self) -> BaseEvaluationRepository:
         """Return the repository used by the runner."""
         return self._repository
 
@@ -75,9 +82,18 @@ class EvaluationRunner:
             generated_outputs=generated_outputs,
         )
 
+        judge_model_name = (
+            self._judge_model_name
+            if LLM_JUDGE_METRIC in metrics
+            else None
+        )
+
         evaluation_run = EvaluationRun(
             dataset_id=dataset.id,
+            dataset=dataset,
             model_name=model_name,
+            metrics=metrics,
+            judge_model_name=judge_model_name,
             status=EvaluationStatus.PENDING,
         )
 
@@ -149,6 +165,37 @@ class EvaluationRunner:
             evaluation_run.status = EvaluationStatus.FAILED
 
         return self._repository.save(evaluation_run)
+
+    def fail_interrupted_runs(self) -> int:
+        """Mark runs left PENDING or RUNNING by a previous process as FAILED.
+
+        Background evaluations do not survive a restart, so these runs
+        would otherwise never finish. Returns the number of runs updated.
+        """
+
+        interrupted = [
+            evaluation_run
+            for status in (
+                EvaluationStatus.PENDING,
+                EvaluationStatus.RUNNING,
+            )
+            for evaluation_run in self._repository.list(status=status)
+        ]
+
+        for evaluation_run in interrupted:
+            evaluation_run.error = INTERRUPTED_ERROR
+            evaluation_run.completed_at = datetime.now(timezone.utc)
+            evaluation_run.status = EvaluationStatus.FAILED
+
+            self._repository.save(evaluation_run)
+
+        if interrupted:
+            logger.warning(
+                "Marked %d interrupted evaluation runs as failed",
+                len(interrupted),
+            )
+
+        return len(interrupted)
 
     def _validate_request(
         self,

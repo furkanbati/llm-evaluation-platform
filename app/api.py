@@ -1,9 +1,12 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import (
     BackgroundTasks,
     FastAPI,
     HTTPException,
+    Query,
     Request,
     Response,
 )
@@ -12,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app.config import (
     APP_NAME,
     APP_VERSION,
+    DATABASE_PATH,
     JUDGE_MODEL_NAME,
     JUDGE_TEMPERATURE,
     OLLAMA_BASE_URL,
@@ -35,7 +39,17 @@ from app.services.evaluation_summary_service import (
 )
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
+from app.storage.base import BaseEvaluationRepository
 from app.storage.evaluation_repository import EvaluationRepository
+from app.storage.sqlite_evaluation_repository import (
+    SQLiteEvaluationRepository,
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    evaluation_runner.fail_interrupted_runs()
+    yield
 
 
 app = FastAPI(
@@ -45,6 +59,7 @@ app = FastAPI(
         "REST API for evaluating Large Language Model "
         "outputs against datasets."
     ),
+    lifespan=lifespan,
 )
 
 
@@ -61,9 +76,20 @@ def handle_unexpected_exception(
     )
 
 
+def create_repository(
+    database_path: str = DATABASE_PATH,
+) -> BaseEvaluationRepository:
+    """Create a SQLite repository, or an in-memory one if no path is set."""
+
+    if database_path:
+        return SQLiteEvaluationRepository(database_path)
+
+    return EvaluationRepository()
+
+
 def create_evaluation_runner(
     model_client: ModelClient | None = None,
-    repository: EvaluationRepository | None = None,
+    repository: BaseEvaluationRepository | None = None,
     judge_model_client: ModelClient | None = None,
 ) -> EvaluationRunner:
     """Create the evaluation runner with registered evaluators.
@@ -115,10 +141,11 @@ def create_evaluation_runner(
         engine=engine,
         model_client=model_client,
         repository=repository,
+        judge_model_name=JUDGE_MODEL_NAME,
     )
 
 
-evaluation_repository = EvaluationRepository()
+evaluation_repository = create_repository()
 
 evaluation_runner = create_evaluation_runner(
     repository=evaluation_repository,
@@ -216,15 +243,15 @@ def create_evaluation(
 def list_evaluations(
     status: EvaluationStatus | None = None,
     model_name: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=1_000),
+    offset: int = Query(default=0, ge=0),
 ) -> list[EvaluationRun]:
-    evaluations = evaluation_runner.repository.list(
+    return evaluation_runner.repository.list(
         status=status,
         model_name=model_name,
+        limit=limit,
+        offset=offset,
     )
-
-    return evaluations[offset : offset + limit]
 
 
 @app.get(

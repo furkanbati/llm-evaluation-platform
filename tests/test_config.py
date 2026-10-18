@@ -76,3 +76,29 @@ def test_judge_temperature_uses_environment_variable(
     importlib.reload(config)
 
     assert config.JUDGE_TEMPERATURE == 0.2
+
+
+def test_database_path_uses_default_when_environment_variable_is_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "DATABASE_PATH",
+        raising=False,
+    )
+
+    importlib.reload(config)
+
+    assert config.DATABASE_PATH == "data/evaluations.db"
+
+
+def test_database_path_uses_environment_variable(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "DATABASE_PATH",
+        "/tmp/evaluations.db",
+    )
+
+    importlib.reload(config)
+
+    assert config.DATABASE_PATH == "/tmp/evaluations.db"
