@@ -93,3 +93,27 @@ def test_token_f1_accuracy_on_labeled_cases() -> None:
 
     assert len(cases) - len(wrong) >= 13, wrong
     assert accepted_wrong == ["wrong-7"]
+
+
+def test_token_recall_accuracy_on_labeled_cases() -> None:
+    # Full-sentence answers keep a high recall, so most correct answers
+    # pass; wrong answers that contain the expected words pass too.
+    from app.evaluators.token_f1 import TokenRecallEvaluator
+
+    cases = load_cases()
+    evaluator = TokenRecallEvaluator()
+
+    wrong = wrong_decisions(evaluator, cases)
+
+    accepted_wrong = [
+        case["id"]
+        for case in cases
+        if case["expected_decision"] == "NO"
+        and evaluator.evaluate(
+            expected_output=case["expected_output"],
+            generated_output=case["generated_output"],
+        ).passed
+    ]
+
+    assert len(cases) - len(wrong) >= 18, wrong
+    assert accepted_wrong == ["wrong-6", "wrong-7", "verbose-2"]
