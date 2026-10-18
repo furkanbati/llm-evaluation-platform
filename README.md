@@ -432,19 +432,44 @@ http://localhost:8000/docs
 
 ---
 
-# Testing
+# Development
 
-Run the complete test suite inside the API container:
+Development tools are kept out of the production image. Install them in a local virtual environment with Python 3.12:
 
 ```bash
-docker compose exec evaluation-api python -m pytest
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
 ```
 
-Tests that require a running Ollama instance are marked as `integration`. To run only the unit tests without Ollama:
+Run the same checks as CI:
+
+```bash
+ruff check .
+ruff format --check .
+mypy
+python -m pytest -m "not integration"
+```
+
+Ruff and mypy are configured in `pyproject.toml`. Use `ruff check --fix .` and `ruff format .` to apply fixes.
+
+---
+
+# Testing
+
+Tests that require a running Ollama instance are marked as `integration`. Unit tests run without Ollama:
 
 ```bash
 python -m pytest -m "not integration"
 ```
+
+To run the integration tests, start the services with `docker compose up`, pull the model with `docker compose exec ollama ollama pull llama3`, set `OLLAMA_BASE_URL=http://localhost:11434`, and run:
+
+```bash
+python -m pytest -m integration
+```
+
+GitHub Actions runs linting, formatting checks, type checking, the unit tests, and a Docker build on every pull request and on pushes to `main`.
 
 The test suite covers:
 
@@ -507,7 +532,9 @@ llm-evaluation-platform/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pytest.ini
+├── pyproject.toml
 ├── requirements.txt
+├── requirements-dev.txt
 └── README.md
 ```
 

@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from app.config import OLLAMA_BASE_URL
 from app.services.ollama_model_client import OllamaModelClient
 
 
@@ -49,7 +50,7 @@ def test_ollama_model_client_generates_outputs(
 @pytest.mark.integration
 def test_ollama_model_client_connects_to_real_ollama() -> None:
     client = OllamaModelClient(
-        base_url="http://ollama:11434",
+        base_url=OLLAMA_BASE_URL,
     )
 
     outputs = client.generate(
