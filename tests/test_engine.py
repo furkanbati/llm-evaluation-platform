@@ -404,3 +404,32 @@ def test_engine_overall_score_rule_uses_threshold() -> None:
 
     assert passing.passed is True
     assert failing.passed is False
+
+
+def test_engine_validate_dataset_reports_metric_and_item() -> None:
+    from app.evaluators.numeric_match import NumericMatchEvaluator
+    from app.models import Dataset
+
+    registry = EvaluatorRegistry()
+    registry.register("numeric_match", NumericMatchEvaluator())
+    registry.register("exact_match", ExactMatchEvaluator())
+
+    engine = EvaluationEngine(registry)
+
+    dataset = Dataset(
+        name="mixed",
+        items=[
+            DatasetItem(input="2 + 2", expected_output="4"),
+            DatasetItem(input="Capital of France?", expected_output="Paris"),
+        ],
+    )
+
+    engine.validate_dataset(dataset, ["exact_match"])
+
+    try:
+        engine.validate_dataset(dataset, ["exact_match", "numeric_match"])
+    except ValueError as exc:
+        assert "numeric_match" in str(exc)
+        assert "item 2" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for non-numeric item")
