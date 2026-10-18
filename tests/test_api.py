@@ -1743,3 +1743,46 @@ def test_create_evaluation_supports_new_text_metrics(
         "normalized_match": True,
         "numeric_match": True,
     }
+
+
+def test_create_evaluation_supports_semantic_similarity(
+    monkeypatch,
+) -> None:
+    from app.services.embedding_client import EmbeddingClient
+
+    class FixedEmbeddingClient(EmbeddingClient):
+        def embed(
+            self,
+            model_name: str,
+            texts: list[str],
+        ) -> list[list[float]]:
+            return [[1.0, 0.0] for _ in texts]
+
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+        embedding_client=FixedEmbeddingClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            **EVALUATION_REQUEST,
+            "metrics": ["semantic_similarity"],
+        },
+    )
+
+    detail = client.get(f"/evaluations/{response.json()['id']}").json()
+    [metric] = detail["results"][0]["metrics"]
+
+    assert detail["status"] == "completed"
+    assert metric["metric_name"] == "semantic_similarity"
+    assert metric["score"] == 1.0
+    assert metric["passed"] is True

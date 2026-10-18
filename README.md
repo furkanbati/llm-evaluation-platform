@@ -8,7 +8,7 @@ The platform generates answers with a model served by Ollama, scores them with p
 
 # Features
 
-* **Metrics:** Exact Match, Normalized Match, Numeric Match, Token F1, Token Recall, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
+* **Metrics:** Exact Match, Normalized Match, Numeric Match, Token F1, Token Recall, String Similarity, Semantic Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
 * **LLM judge:** sees the original question, treats answers as tagged data to resist prompt injection, runs at temperature `0.0`, and has a labeled accuracy test
 * **Background evaluations:** `POST /evaluations` returns `202 Accepted` immediately; clients poll for the result
 * **Concurrency limits:** a bounded number of evaluations run at once, the rest wait in a queue, and a full queue returns `503`
@@ -142,7 +142,7 @@ Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` b
 
 # Evaluation Metrics
 
-The platform supports seven metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
+The platform supports eight metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
 
 ## Exact Match
 
@@ -264,6 +264,24 @@ This metric measures textual similarity rather than embedding-based semantic sim
 
 ---
 
+## Semantic Similarity
+
+Embeds the expected and generated outputs with an Ollama embedding model and scores their cosine similarity, clipped to `[0, 1]`. It recognizes paraphrases without shared words:
+
+```text
+Expected: 4
+Generated: The answer is four.
+Score: 0.78
+```
+
+The model is set by `SEMANTIC_SIMILARITY_MODEL` (default `nomic-embed-text`) and the pass threshold by `SEMANTIC_SIMILARITY_THRESHOLD` (default `0.73`).
+
+The default threshold was chosen on a separate calibration set of 12 answer pairs, not on the labeled cases below: correct answers scored 0.78–0.84 (except a numeric one at 0.62) and wrong answers on the same topic scored 0.53–0.68. Similarity values depend on the embedding model, so recalibrate the threshold on your own data when you change the model.
+
+Embeddings capture the topic more than correctness. Wrong answers on the same topic can pass, such as `1944` for `1945` (0.73), and short answers such as `No` can score low.
+
+---
+
 ## LLM Judge
 
 Uses an LLM to decide whether the generated answer is semantically and factually correct compared with the expected answer. The judge answers YES or NO, which becomes a score of `1.0` or `0.0`.
@@ -306,12 +324,14 @@ The metrics trade cost for accuracy. On the 23 labeled cases:
 | `numeric_match` (7 numeric cases) | 7/7 | 4/4 | 3/3 |
 | `token_f1` | 13/23 | 1/10 | 12/13 |
 | `token_recall` | 18/23 | 8/10 | 10/13 |
+| `semantic_similarity` (`nomic-embed-text`) | 15/23 | 5/10 | 10/13 |
 | `llm_judge` (`llama3`) | 22/23 | 9/10 | 13/13 |
 
 * Use `numeric_match` for datasets with numeric answers.
 * Use `normalized_match` for short factual answers when an LLM judge is too slow; it accepts more correct answers than `exact_match` but can accept wrong answers that mention the expected text.
 * Use `token_recall` instead of `token_f1` when answers are full sentences; it accepts slightly more correct answers than `normalized_match` and slightly more wrong ones.
 * Use `token_f1` for short, extractive answers where partial credit matters; most correct answers in the labeled cases are full sentences, which it scores low.
+* Use `semantic_similarity` to recognize paraphrases without shared words, combined with another metric; on its own it accepts wrong answers on the same topic.
 * Use `llm_judge` when answers are free-form and accuracy matters most.
 
 Metrics can be combined with `aggregation`, for example to weight `llm_judge` above a cheaper metric.
@@ -333,13 +353,14 @@ Evaluator implementation
 Current registrations:
 
 ```text
-exact_match      → ExactMatchEvaluator
-normalized_match → NormalizedMatchEvaluator
-numeric_match    → NumericMatchEvaluator
-similarity       → SimilarityEvaluator
-token_f1         → TokenF1Evaluator
-token_recall     → TokenRecallEvaluator
-llm_judge        → LLMJudgeEvaluator
+exact_match         → ExactMatchEvaluator
+normalized_match    → NormalizedMatchEvaluator
+numeric_match       → NumericMatchEvaluator
+similarity          → SimilarityEvaluator
+semantic_similarity → SemanticSimilarityEvaluator
+token_f1            → TokenF1Evaluator
+token_recall        → TokenRecallEvaluator
+llm_judge           → LLMJudgeEvaluator
 ```
 
 Evaluators receive the expected output, the generated output, and the original input. An evaluator can also validate expected outputs before a run is created, as `numeric_match` does. New evaluators can be added without changing the evaluation engine.
@@ -379,6 +400,7 @@ Example response:
     "llm_judge",
     "normalized_match",
     "numeric_match",
+    "semantic_similarity",
     "similarity",
     "token_f1",
     "token_recall"
@@ -617,13 +639,14 @@ Build and start the services:
 docker compose up --build
 ```
 
-Pull the model used for generation and judging:
+Pull the model used for generation and judging, and the embedding model used by `semantic_similarity`:
 
 ```bash
 docker compose exec ollama ollama pull llama3
+docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-Without the model, evaluations fail with `model_not_found`.
+Without a model, evaluations that need it fail with `model_not_found`.
 
 The API will be available at:
 
@@ -650,6 +673,8 @@ Settings are read from environment variables:
 | `JUDGE_TEMPERATURE` | `0.0` | Sampling temperature of the LLM judge |
 | `GENERATION_TEMPERATURE` | `0.0` | Default temperature for the evaluated model; empty leaves it to Ollama |
 | `GENERATION_SEED` | unset | Default seed for the evaluated model; empty leaves it to Ollama |
+| `SEMANTIC_SIMILARITY_MODEL` | `nomic-embed-text` | Embedding model used by `semantic_similarity` |
+| `SEMANTIC_SIMILARITY_THRESHOLD` | `0.73` | Pass threshold of `semantic_similarity`; recalibrate when changing the model |
 | `DATABASE_PATH` | `data/evaluations.db` | SQLite file; empty keeps runs in memory only |
 | `MAX_CONCURRENT_EVALUATIONS` | `2` | Evaluations that run at once |
 | `MAX_QUEUED_EVALUATIONS` | `100` | Evaluations that can be queued or running before requests get `503` |
@@ -689,7 +714,7 @@ Tests that require a running Ollama instance are marked as `integration`. Unit t
 python -m pytest -m "not integration"
 ```
 
-To run the integration tests, start the services with `docker compose up`, pull the model with `docker compose exec ollama ollama pull llama3`, set `OLLAMA_BASE_URL=http://localhost:11434`, and run:
+To run the integration tests, start the services with `docker compose up`, pull the models as described in [Run](#run), set `OLLAMA_BASE_URL=http://localhost:11434`, and run:
 
 ```bash
 python -m pytest -m integration
@@ -712,7 +737,7 @@ The test suite covers:
 * API endpoints, filtering, and pagination
 * Configuration
 * Accuracy of the deterministic metrics on the labeled cases
-* LLM judge accuracy on labeled cases (integration)
+* LLM judge and semantic similarity accuracy on labeled cases (integration)
 
 ---
 
@@ -729,15 +754,18 @@ llm-evaluation-platform/
 │   │   ├── normalized_match.py
 │   │   ├── numeric_match.py
 │   │   ├── registry.py
+│   │   ├── semantic_similarity.py
 │   │   ├── similarity.py
 │   │   └── token_f1.py            # token_f1 and token_recall
 │   │
 │   ├── services/
+│   │   ├── embedding_client.py
 │   │   ├── evaluation_engine.py
 │   │   ├── evaluation_executor.py
 │   │   ├── evaluation_runner.py
 │   │   ├── evaluation_summary_service.py
 │   │   ├── model_client.py
+│   │   ├── ollama_embedding_client.py
 │   │   └── ollama_model_client.py
 │   │
 │   ├── storage/
@@ -763,6 +791,7 @@ llm-evaluation-platform/
 │   ├── test_metric_accuracy.py
 │   ├── test_normalized_match.py
 │   ├── test_numeric_match.py
+│   ├── test_semantic_similarity.py
 │   ├── test_token_f1.py
 │   └── ...
 │
@@ -836,7 +865,6 @@ Possible next steps include:
 
 **Evaluation**
 
-* Embedding-based semantic similarity
 * Model-to-model comparison on the same dataset
 * RAG-specific metrics
 * Additional LLM judge strategies, such as judges that explain their decision
