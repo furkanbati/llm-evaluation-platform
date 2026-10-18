@@ -29,6 +29,7 @@ from app.evaluators.normalized_match import NormalizedMatchEvaluator
 from app.evaluators.numeric_match import NumericMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.evaluators.similarity import SimilarityEvaluator
+from app.evaluators.token_f1 import TokenF1Evaluator
 from app.models import (
     ErrorResponse,
     EvaluationRequest,
@@ -132,6 +133,11 @@ def create_evaluation_runner(
     registry.register(
         "numeric_match",
         NumericMatchEvaluator(),
+    )
+
+    registry.register(
+        "token_f1",
+        TokenF1Evaluator(),
     )
 
     if judge_model_client is None:
