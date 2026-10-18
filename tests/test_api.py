@@ -10,6 +10,7 @@ from app.api import (
 )
 from app.models import (
     EvaluationRun,
+    GenerationOptions,
 )
 from app.services.model_client import ModelClient
 from app.storage.evaluation_repository import EvaluationRepository
@@ -23,6 +24,7 @@ class FakeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return ["4"]
 
@@ -32,6 +34,7 @@ class FakeEvaluationWithJudgeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         if "Respond with only YES or NO." in inputs[0]:
             return ["YES"]
@@ -483,6 +486,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "model_name",
         "metrics",
         "judge_model_name",
+        "generation_options",
         "status",
         "results",
         "created_at",
@@ -1097,6 +1101,7 @@ def test_create_evaluation_returns_before_running_evaluation(
             self,
             model_name: str,
             inputs: list[str],
+            options: GenerationOptions | None = None,
         ) -> list[str]:
             self.calls += 1
             return ["4"]
@@ -1155,6 +1160,7 @@ def test_create_evaluation_reports_failure_through_get(
             self,
             model_name: str,
             inputs: list[str],
+            options: GenerationOptions | None = None,
         ) -> list[str]:
             raise RuntimeError("Ollama is unavailable")
 
@@ -1265,3 +1271,129 @@ def test_list_evaluations_rejects_invalid_pagination() -> None:
         response = client.get(f"/evaluations?{query}")
 
         assert response.status_code == 422, query
+
+
+def test_create_evaluation_uses_request_generation_options(
+    monkeypatch,
+) -> None:
+    class OptionsCaptureModelClient(ModelClient):
+        def __init__(self) -> None:
+            self.options: GenerationOptions | None = None
+
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+            options: GenerationOptions | None = None,
+        ) -> list[str]:
+            self.options = options
+            return ["4"]
+
+    model_client = OptionsCaptureModelClient()
+
+    runner = create_evaluation_runner(
+        model_client=model_client,
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+            "generation_options": {
+                "temperature": 0.7,
+                "seed": 42,
+            },
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["generation_options"] == {
+        "temperature": 0.7,
+        "seed": 42,
+    }
+    assert model_client.options == GenerationOptions(temperature=0.7, seed=42)
+
+
+def test_create_evaluation_defaults_to_zero_temperature(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.json()["generation_options"] == {
+        "temperature": 0.0,
+        "seed": None,
+    }
+
+
+def test_create_evaluation_rejects_invalid_generation_options() -> None:
+    client = TestClient(app)
+
+    for options in (
+        {"temperature": 3.0},
+        {"seed": "abc"},
+        {"top_k": 10},
+    ):
+        response = client.post(
+            "/evaluations",
+            json={
+                "dataset": {
+                    "name": "math-test",
+                    "items": [
+                        {
+                            "input": "2 + 2",
+                            "expected_output": "4",
+                        },
+                    ],
+                },
+                "model_name": "llama3",
+                "metrics": ["exact_match"],
+                "generation_options": options,
+            },
+        )
+
+        assert response.status_code == 422, options

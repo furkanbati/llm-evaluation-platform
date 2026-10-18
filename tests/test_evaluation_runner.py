@@ -8,6 +8,7 @@ from app.models import (
     EvaluationResult,
     EvaluationRun,
     EvaluationStatus,
+    GenerationOptions,
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
@@ -20,6 +21,7 @@ class FakeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return ["Paris"]
 
@@ -29,6 +31,7 @@ class FailingModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         raise RuntimeError("Model generation failed")
 
@@ -285,6 +288,7 @@ class RecordingModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         self.calls += 1
         return ["Paris"]
@@ -298,6 +302,7 @@ class StaticModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return self._outputs
 
@@ -456,6 +461,7 @@ def test_runner_truncates_long_error_messages() -> None:
             self,
             model_name: str,
             inputs: list[str],
+            options: GenerationOptions | None = None,
         ) -> list[str]:
             raise RuntimeError("x" * 5_000)
 
@@ -663,3 +669,101 @@ def test_execute_fails_run_without_model_client() -> None:
     assert result.error == (
         "Model client is required when generated outputs are not provided"
     )
+
+
+class OptionsCaptureModelClient(ModelClient):
+    def __init__(self) -> None:
+        self.options: GenerationOptions | None = None
+
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+        options: GenerationOptions | None = None,
+    ) -> list[str]:
+        self.options = options
+        return ["Paris"]
+
+
+def create_options_runner(
+    model_client: ModelClient,
+    defaults: GenerationOptions | None = None,
+) -> EvaluationRunner:
+    registry = EvaluatorRegistry()
+    registry.register("exact_match", ExactMatchEvaluator())
+
+    return EvaluationRunner(
+        engine=EvaluationEngine(registry),
+        model_client=model_client,
+        default_generation_options=defaults,
+    )
+
+
+def test_create_run_stores_default_generation_options() -> None:
+    runner = create_options_runner(
+        model_client=FakeModelClient(),
+        defaults=GenerationOptions(temperature=0.0, seed=7),
+    )
+
+    run = runner.create_run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert run.generation_options == GenerationOptions(temperature=0.0, seed=7)
+
+
+def test_create_run_merges_request_options_with_defaults() -> None:
+    runner = create_options_runner(
+        model_client=FakeModelClient(),
+        defaults=GenerationOptions(temperature=0.0, seed=7),
+    )
+
+    run = runner.create_run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+        generation_options=GenerationOptions(seed=42),
+    )
+
+    assert run.generation_options == GenerationOptions(temperature=0.0, seed=42)
+
+
+def test_create_run_does_not_share_default_options_between_runs() -> None:
+    defaults = GenerationOptions(temperature=0.0)
+
+    runner = create_options_runner(
+        model_client=FakeModelClient(),
+        defaults=defaults,
+    )
+
+    run = runner.create_run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    run.generation_options.seed = 99
+
+    assert defaults.seed is None
+
+
+def test_execute_sends_stored_generation_options_to_model() -> None:
+    model_client = OptionsCaptureModelClient()
+
+    runner = create_options_runner(
+        model_client=model_client,
+        defaults=GenerationOptions(temperature=0.0),
+    )
+
+    result = runner.run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+        generation_options=GenerationOptions(temperature=0.8, seed=42),
+    )
+
+    assert result.status == EvaluationStatus.COMPLETED
+    assert model_client.options == GenerationOptions(temperature=0.8, seed=42)
+    assert model_client.options == result.generation_options

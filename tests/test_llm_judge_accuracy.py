@@ -5,6 +5,7 @@ import pytest
 
 from app.config import JUDGE_MODEL_NAME, JUDGE_TEMPERATURE, OLLAMA_BASE_URL
 from app.evaluators.llm_judge import LLMJudgeEvaluator
+from app.models import GenerationOptions
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
 
@@ -67,10 +68,12 @@ class RecordingModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         outputs = self._inner.generate(
             model_name=model_name,
             inputs=inputs,
+            options=options,
         )
         self.last_output = outputs[0]
         return outputs

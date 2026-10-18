@@ -2,6 +2,7 @@ import pytest
 
 from app.config import JUDGE_MODEL_NAME, OLLAMA_BASE_URL
 from app.evaluators.llm_judge import LLMJudgeEvaluator
+from app.models import GenerationOptions
 from app.services.model_client import ModelClient
 from app.services.ollama_model_client import OllamaModelClient
 
@@ -11,6 +12,7 @@ class FakeJudgeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return ["YES"]
 
@@ -23,6 +25,7 @@ class PromptCaptureModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         self.prompt = inputs[0]
         return ["YES"]

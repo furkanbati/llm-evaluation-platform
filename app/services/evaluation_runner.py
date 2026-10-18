@@ -5,6 +5,7 @@ from app.models import (
     Dataset,
     EvaluationRun,
     EvaluationStatus,
+    GenerationOptions,
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.model_client import ModelClient
@@ -29,11 +30,15 @@ class EvaluationRunner:
         model_client: ModelClient | None = None,
         repository: BaseEvaluationRepository | None = None,
         judge_model_name: str | None = None,
+        default_generation_options: GenerationOptions | None = None,
     ) -> None:
         self._engine = engine
         self._model_client = model_client
         self._repository = repository or EvaluationRepository()
         self._judge_model_name = judge_model_name
+        self._default_generation_options = (
+            default_generation_options or GenerationOptions()
+        )
 
     @property
     def repository(self) -> BaseEvaluationRepository:
@@ -46,6 +51,7 @@ class EvaluationRunner:
         model_name: str,
         metrics: list[str],
         generated_outputs: list[str] | None = None,
+        generation_options: GenerationOptions | None = None,
     ) -> EvaluationRun:
         """Create and execute an evaluation run synchronously."""
 
@@ -54,6 +60,7 @@ class EvaluationRunner:
             model_name=model_name,
             metrics=metrics,
             generated_outputs=generated_outputs,
+            generation_options=generation_options,
         )
 
         return self.execute(
@@ -69,10 +76,13 @@ class EvaluationRunner:
         model_name: str,
         metrics: list[str],
         generated_outputs: list[str] | None = None,
+        generation_options: GenerationOptions | None = None,
     ) -> EvaluationRun:
         """Validate the request and store a PENDING evaluation run.
 
         Invalid requests raise ValueError before a run is created.
+        Generation options left unset fall back to the runner defaults,
+        and the resolved options are stored on the run.
         """
 
         self._validate_request(
@@ -91,6 +101,9 @@ class EvaluationRunner:
             model_name=model_name,
             metrics=metrics,
             judge_model_name=judge_model_name,
+            generation_options=self._resolve_generation_options(
+                generation_options,
+            ),
             status=EvaluationStatus.PENDING,
         )
 
@@ -126,6 +139,7 @@ class EvaluationRunner:
                 generated_outputs = self._model_client.generate(
                     model_name=evaluation_run.model_name,
                     inputs=inputs,
+                    options=evaluation_run.generation_options,
                 )
 
                 if len(dataset.items) != len(generated_outputs):
@@ -196,6 +210,17 @@ class EvaluationRunner:
             )
 
         return len(interrupted)
+
+    def _resolve_generation_options(
+        self,
+        overrides: GenerationOptions | None,
+    ) -> GenerationOptions:
+        if overrides is None:
+            return self._default_generation_options.model_copy()
+
+        return self._default_generation_options.model_copy(
+            update=overrides.model_dump(exclude_none=True),
+        )
 
     def _validate_request(
         self,

@@ -43,6 +43,22 @@ class Dataset(BaseModel):
     items: list[DatasetItem] = Field(min_length=1)
 
 
+class GenerationOptions(BaseModel):
+    """Sampling settings for the evaluated model.
+
+    Unset fields are not sent to the model provider.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    seed: int | None = None
+
+    def to_provider_options(self) -> dict[str, Any]:
+        """Return the options that are set, in provider format."""
+        return self.model_dump(exclude_none=True)
+
+
 class EvaluationRequest(BaseModel):
     """Configuration describing an evaluation that should be executed."""
 
@@ -54,6 +70,7 @@ class EvaluationRequest(BaseModel):
     dataset: Dataset
     model_name: str = Field(min_length=1, max_length=200)
     metrics: list[str] = Field(min_length=1)
+    generation_options: GenerationOptions | None = None
 
     @field_validator("metrics")
     @classmethod
@@ -112,6 +129,7 @@ class EvaluationRun(BaseModel):
     model_name: str = Field(min_length=1, max_length=200)
     metrics: list[str] = Field(default_factory=list)
     judge_model_name: str | None = Field(default=None, max_length=200)
+    generation_options: GenerationOptions = Field(default_factory=GenerationOptions)
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

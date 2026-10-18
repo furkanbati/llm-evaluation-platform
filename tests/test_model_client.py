@@ -1,3 +1,4 @@
+from app.models import GenerationOptions
 from app.services.model_client import ModelClient
 
 
@@ -6,6 +7,7 @@ class FakeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return [f"generated: {item}" for item in inputs]
 

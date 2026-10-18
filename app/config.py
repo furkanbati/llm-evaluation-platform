@@ -23,3 +23,13 @@ DATABASE_PATH = os.getenv(
 )
 
 JUDGE_TEMPERATURE = float(os.getenv("JUDGE_TEMPERATURE", "0.0"))
+
+# Default sampling settings for the evaluated model. An empty value leaves the
+# setting to the model provider. Requests can override both.
+_generation_temperature = os.getenv("GENERATION_TEMPERATURE", "0.0")
+GENERATION_TEMPERATURE = (
+    float(_generation_temperature) if _generation_temperature else None
+)
+
+_generation_seed = os.getenv("GENERATION_SEED", "")
+GENERATION_SEED = int(_generation_seed) if _generation_seed else None
