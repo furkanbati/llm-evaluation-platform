@@ -286,9 +286,22 @@ Example request:
     "exact_match",
     "similarity",
     "llm_judge"
-  ]
+  ],
+  "generation_options": {
+    "temperature": 0.7,
+    "seed": 42
+  }
 }
 ```
+
+`generation_options` is optional and controls sampling for the evaluated model:
+
+* `temperature`: between `0.0` and `2.0`
+* `seed`: an integer that makes sampling repeatable
+
+Fields that are not set fall back to the `GENERATION_TEMPERATURE` (default `0.0`) and `GENERATION_SEED` (default unset) environment variables. Setting either variable to an empty string leaves that setting to Ollama. The resolved options are stored on the run, so results show how they were generated. The LLM judge uses its own `JUDGE_TEMPERATURE` setting.
+
+With the default temperature of `0.0`, the same request produces the same outputs. With a higher temperature, set a `seed` to make outputs repeatable. Outputs can still differ slightly between Ollama sessions, for example after the model is reloaded.
 
 Evaluations run in the background. A valid request returns `202 Accepted` immediately with the `PENDING` run and a `Location` header pointing to it:
 
