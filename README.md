@@ -338,6 +338,16 @@ Poll `GET /evaluations/{evaluation_id}` until `status` is `completed` or `failed
 
 Invalid requests, such as unknown metrics, return `400 Bad Request` and no run is created.
 
+At most `MAX_CONCURRENT_EVALUATIONS` evaluations (default `2`) run at once. Others wait in a queue with status `pending` and start in order. Within an evaluation, model calls are sequential, so this also limits parallel requests to Ollama.
+
+When `MAX_QUEUED_EVALUATIONS` evaluations (default `100`, including running ones) are already queued or running, new requests return `503 Service Unavailable` and no run is created:
+
+```json
+{
+  "detail": "Too many evaluations are queued. Try again later."
+}
+```
+
 ---
 
 ## Get Evaluation
