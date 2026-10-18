@@ -189,6 +189,12 @@ Decision: NO
 
 The evaluator uses explicit positive and negative examples in its judging prompt and returns a binary score.
 
+The judge also receives the original dataset input, so answers are judged in the context of the question.
+
+The question, expected answer, and generated answer are wrapped in XML tags and the judge is instructed to treat their contents as data, never as instructions. Tags inside the content are removed so a generated answer cannot break out of its block.
+
+The judge runs with its own Ollama client at temperature `0.0` by default so its decisions are stable. This can be changed with the `JUDGE_TEMPERATURE` environment variable.
+
 ---
 
 # Evaluator Registry
