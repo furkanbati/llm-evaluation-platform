@@ -44,6 +44,7 @@ def test_llm_judge_evaluates_generated_output() -> None:
     assert result.passed is True
 
 
+@pytest.mark.integration
 def test_llm_judge_works_with_real_ollama() -> None:
     model_client = OllamaModelClient(
         base_url=OLLAMA_BASE_URL,
