@@ -18,7 +18,6 @@ _DATA_TAG_PATTERN = re.compile(
 
 
 class LLMJudgeEvaluator(Evaluator):
-
     def __init__(
         self,
         model_client: ModelClient,
@@ -118,6 +117,4 @@ class LLMJudgeEvaluator(Evaluator):
                 passed=False,
             )
 
-        raise ValueError(
-            f"Invalid LLM judge response: {judgement}"
-        )
+        raise ValueError(f"Invalid LLM judge response: {judgement}")

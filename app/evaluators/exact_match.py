@@ -4,7 +4,6 @@ from .base import Evaluator
 
 
 class ExactMatchEvaluator(Evaluator):
-
     def evaluate(
         self,
         expected_output: str,
@@ -12,10 +11,7 @@ class ExactMatchEvaluator(Evaluator):
         input_text: str | None = None,
     ) -> MetricResult:
 
-        match = (
-            expected_output.strip()
-            == generated_output.strip()
-        )
+        match = expected_output.strip() == generated_output.strip()
 
         return MetricResult(
             metric_name="exact_match",

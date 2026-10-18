@@ -50,6 +50,7 @@ def test_summary_calculates_basic_statistics() -> None:
     assert summary.average_score == 0.5
     assert summary.success_rate == (1 / 3)
 
+
 def test_summary_handles_empty_results() -> None:
     from app.services.evaluation_summary_service import (
         EvaluationSummaryService,
@@ -112,11 +113,6 @@ def test_summary_calculates_metric_statistics() -> None:
         evaluation,
     )
 
-    assert summary.metrics[
-        "exact_match"
-    ].average_score == 0.5
+    assert summary.metrics["exact_match"].average_score == 0.5
 
-    assert summary.metrics[
-        "exact_match"
-    ].pass_rate == 0.5
-
+    assert summary.metrics["exact_match"].pass_rate == 0.5

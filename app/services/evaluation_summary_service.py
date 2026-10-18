@@ -27,29 +27,14 @@ class EvaluationSummaryService:
             )
 
         passed_items = sum(
-            1
-            for result in results
-            if all(
-                metric.passed
-                for metric in result.metrics
-            )
+            1 for result in results if all(metric.passed for metric in result.metrics)
         )
 
-        failed_items = (
-            total_items - passed_items
-        )
+        failed_items = total_items - passed_items
 
-        average_score = (
-            sum(
-                result.overall_score
-                for result in results
-            )
-            / total_items
-        )
+        average_score = sum(result.overall_score for result in results) / total_items
 
-        success_rate = (
-            passed_items / total_items
-        )
+        success_rate = passed_items / total_items
 
         metric_scores: dict[str, list[float]] = {}
         metric_passes: dict[str, list[bool]] = {}
@@ -73,12 +58,8 @@ class EvaluationSummaryService:
             passes = metric_passes[metric_name]
 
             metrics[metric_name] = MetricSummary(
-                average_score=(
-                    sum(scores) / len(scores)
-                ),
-                pass_rate=(
-                    sum(passes) / len(passes)
-                ),
+                average_score=(sum(scores) / len(scores)),
+                pass_rate=(sum(passes) / len(passes)),
             )
 
         return EvaluationSummary(
@@ -89,4 +70,3 @@ class EvaluationSummaryService:
             success_rate=success_rate,
             metrics=metrics,
         )
-

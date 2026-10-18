@@ -65,10 +65,7 @@ def test_registry_lists_registered_metrics() -> None:
         ExactMatchEvaluator(),
     )
 
-    assert registry.available_metrics() == [
-        "exact_match"
-    ]
-
+    assert registry.available_metrics() == ["exact_match"]
 
 
 def test_registry_registers_similarity_evaluator() -> None:
@@ -87,5 +84,3 @@ def test_registry_registers_similarity_evaluator() -> None:
         evaluator,
         SimilarityEvaluator,
     )
-
-

@@ -15,9 +15,7 @@ class EvaluatorRegistry:
         """Register a new evaluator."""
 
         if metric_name in self._evaluators:
-            raise ValueError(
-                f"Evaluator already registered: {metric_name}"
-            )
+            raise ValueError(f"Evaluator already registered: {metric_name}")
 
         self._evaluators[metric_name] = evaluator
 
@@ -30,13 +28,9 @@ class EvaluatorRegistry:
         try:
             return self._evaluators[metric_name]
         except KeyError as exc:
-            raise ValueError(
-                f"Unknown metric: {metric_name}"
-            ) from exc
+            raise ValueError(f"Unknown metric: {metric_name}") from exc
 
     def available_metrics(self) -> list[str]:
         """Return all registered metric names."""
 
         return sorted(self._evaluators.keys())
-
-
