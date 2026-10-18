@@ -41,6 +41,10 @@ class EvaluationRunner:
             default_generation_options or GenerationOptions()
         )
 
+    def available_metrics(self) -> list[str]:
+        """Return the metrics this runner can evaluate."""
+        return self._engine.available_metrics()
+
     @property
     def repository(self) -> BaseEvaluationRepository:
         """Return the repository used by the runner."""
@@ -248,6 +252,7 @@ class EvaluationRunner:
         generated_outputs: list[str] | None,
     ) -> None:
         self._engine.validate_metrics(metrics)
+        self._engine.validate_dataset(dataset, metrics)
 
         if generated_outputs is None:
             if self._model_client is None:

@@ -46,6 +46,13 @@ class FailingEvaluationEngine:
     ) -> None:
         pass
 
+    def validate_dataset(
+        self,
+        dataset: Dataset,
+        metrics: list[str],
+    ) -> None:
+        pass
+
     def evaluate(
         self,
         item: DatasetItem,

@@ -1,6 +1,7 @@
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
     AggregationOptions,
+    Dataset,
     DatasetItem,
     EvaluationResult,
     MetricResult,
@@ -31,6 +32,29 @@ class EvaluationEngine:
 
         if unknown:
             raise ValueError(f"Unknown metric: {', '.join(unknown)}")
+
+    def validate_dataset(
+        self,
+        dataset: Dataset,
+        metrics: list[str],
+    ) -> None:
+        """Raise ValueError if a metric cannot score an item of the dataset."""
+
+        for metric_name in metrics:
+            evaluator = self._registry.get(metric_name)
+
+            for index, item in enumerate(dataset.items, start=1):
+                try:
+                    evaluator.validate_expected_output(item.expected_output)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Metric '{metric_name}' cannot score dataset item "
+                        f"{index}: {exc}"
+                    ) from exc
+
+    def available_metrics(self) -> list[str]:
+        """Return the registered metric names."""
+        return self._registry.available_metrics()
 
     def evaluate(
         self,
