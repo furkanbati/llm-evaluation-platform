@@ -1645,3 +1645,98 @@ def test_create_evaluation_rejects_invalid_aggregation() -> None:
         )
 
         assert response.status_code == 422, aggregation
+
+
+def test_create_evaluation_rejects_non_numeric_dataset_for_numeric_match(
+    monkeypatch,
+) -> None:
+    class CountingModelClient(ModelClient):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+            options: GenerationOptions | None = None,
+        ) -> list[str]:
+            self.calls += 1
+            return ["Paris"]
+
+    model_client = CountingModelClient()
+
+    runner = create_evaluation_runner(
+        model_client=model_client,
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            **EVALUATION_REQUEST,
+            "dataset": {
+                "name": "capitals",
+                "items": [
+                    {"input": "Capital of France?", "expected_output": "Paris"},
+                ],
+            },
+            "metrics": ["numeric_match"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "numeric_match" in response.json()["detail"]
+    assert model_client.calls == 0
+    assert runner.repository.list() == []
+
+
+def test_create_evaluation_supports_new_text_metrics(
+    monkeypatch,
+) -> None:
+    class AnswerModelClient(ModelClient):
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+            options: GenerationOptions | None = None,
+        ) -> list[str]:
+            return ["The answer is 4."]
+
+    runner = create_evaluation_runner(
+        model_client=AnswerModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            **EVALUATION_REQUEST,
+            "metrics": ["exact_match", "normalized_match", "numeric_match"],
+        },
+    )
+
+    detail = client.get(f"/evaluations/{response.json()['id']}").json()
+    metrics = {
+        metric["metric_name"]: metric["passed"]
+        for metric in detail["results"][0]["metrics"]
+    }
+
+    assert metrics == {
+        "exact_match": False,
+        "normalized_match": True,
+        "numeric_match": True,
+    }

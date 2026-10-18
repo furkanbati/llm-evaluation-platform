@@ -8,7 +8,7 @@ The platform generates answers with a model served by Ollama, scores them with p
 
 # Features
 
-* **Metrics:** Exact Match, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
+* **Metrics:** Exact Match, Normalized Match, Numeric Match, String Similarity, and LLM-as-a-Judge, registered through a pluggable evaluator registry
 * **LLM judge:** sees the original question, treats answers as tagged data to resist prompt injection, runs at temperature `0.0`, and has a labeled accuracy test
 * **Background evaluations:** `POST /evaluations` returns `202 Accepted` immediately; clients poll for the result
 * **Concurrency limits:** a bounded number of evaluations run at once, the rest wait in a queue, and a full queue returns `503`
@@ -142,7 +142,7 @@ Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` b
 
 # Evaluation Metrics
 
-The platform supports three metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
+The platform supports five metrics. Each metric returns a score between `0.0` and `1.0` and a pass decision.
 
 ## Exact Match
 
@@ -161,6 +161,50 @@ Score: 0.0
 ```
 
 Exact Match is useful for deterministic outputs but is intentionally strict.
+
+---
+
+## Normalized Match
+
+Lowercases both outputs, removes punctuation and the English articles `a`, `an`, and `the`, and collapses whitespace. Decimal and thousands separators between digits are kept, so `4.0` and `1,000` stay intact.
+
+The metric passes when the normalized outputs are equal or when the normalized expected output appears as whole words in the generated output.
+
+```text
+Expected: Paris
+Generated: The capital of France is Paris.
+Score: 1.0
+```
+
+```text
+Expected: Paris
+Generated: Parisian cuisine
+Score: 0.0
+```
+
+Because it checks containment, it can accept wrong answers that mention the expected text, such as `It could be Paris or Lyon`.
+
+---
+
+## Numeric Match
+
+Compares the number in the expected output with the **last** number in the generated output, as common math benchmarks do, with a relative tolerance of `1e-6`.
+
+```text
+Expected: 4
+Generated: 2 + 2 = 4
+Score: 1.0
+```
+
+```text
+Expected: 4
+Generated: The answer is four.
+Score: 1.0
+```
+
+It understands signs, decimals, thousands separators (`1,000`), fractions (`1/2`), percentages (`50%`), and number words from `zero` to `twenty`. Number words are only used when the text has no digits.
+
+Every expected output in the dataset must contain a number. Otherwise the request is rejected with `400 Bad Request` before the model is called.
 
 ---
 
@@ -210,6 +254,26 @@ Judge accuracy is measured on 23 labeled cases in `tests/data/llm_judge_cases.js
 
 ---
 
+## Choosing Metrics
+
+The metrics trade cost for accuracy. On the 23 labeled cases:
+
+| Metric | Correct decisions | Correct answers accepted | Wrong answers rejected |
+|---|---|---|---|
+| `exact_match` | 13/23 | 0/10 | 13/13 |
+| `similarity` | 14/23 | 1/10 | 13/13 |
+| `normalized_match` | 18/23 | 7/10 | 11/13 |
+| `numeric_match` (7 numeric cases) | 7/7 | 4/4 | 3/3 |
+| `llm_judge` (`llama3`) | 22/23 | 9/10 | 13/13 |
+
+* Use `numeric_match` for datasets with numeric answers.
+* Use `normalized_match` for short factual answers when an LLM judge is too slow; it accepts more correct answers than `exact_match` but can accept wrong answers that mention the expected text.
+* Use `llm_judge` when answers are free-form and accuracy matters most.
+
+Metrics can be combined with `aggregation`, for example to weight `llm_judge` above a cheaper metric.
+
+---
+
 # Evaluator Registry
 
 Metrics are registered through an `EvaluatorRegistry`.
@@ -225,12 +289,14 @@ Evaluator implementation
 Current registrations:
 
 ```text
-exact_match → ExactMatchEvaluator
-similarity  → SimilarityEvaluator
-llm_judge   → LLMJudgeEvaluator
+exact_match      → ExactMatchEvaluator
+normalized_match → NormalizedMatchEvaluator
+numeric_match    → NumericMatchEvaluator
+similarity       → SimilarityEvaluator
+llm_judge        → LLMJudgeEvaluator
 ```
 
-Evaluators receive the expected output, the generated output, and the original input. New evaluators can be added without changing the evaluation engine.
+Evaluators receive the expected output, the generated output, and the original input. An evaluator can also validate expected outputs before a run is created, as `numeric_match` does. New evaluators can be added without changing the evaluation engine.
 
 ---
 
@@ -264,11 +330,15 @@ Example response:
 {
   "metrics": [
     "exact_match",
-    "similarity",
-    "llm_judge"
+    "llm_judge",
+    "normalized_match",
+    "numeric_match",
+    "similarity"
   ]
 }
 ```
+
+The list comes from the evaluator registry, sorted by name.
 
 ---
 
@@ -359,7 +429,7 @@ Location: /evaluations/3f6c1b8e-...
 
 Poll `GET /evaluations/{evaluation_id}` until `status` is `completed` or `failed`.
 
-Invalid requests, such as unknown metrics, return `400 Bad Request` and no run is created.
+Invalid requests, such as unknown metrics or a dataset that a metric cannot score, return `400 Bad Request` and no run is created.
 
 ### Concurrency
 
@@ -593,6 +663,7 @@ The test suite covers:
 * Evaluation summaries
 * API endpoints, filtering, and pagination
 * Configuration
+* Accuracy of the deterministic metrics on the labeled cases
 * LLM judge accuracy on labeled cases (integration)
 
 ---
@@ -607,6 +678,8 @@ llm-evaluation-platform/
 │   │   ├── base.py
 │   │   ├── exact_match.py
 │   │   ├── llm_judge.py
+│   │   ├── normalized_match.py
+│   │   ├── numeric_match.py
 │   │   ├── registry.py
 │   │   └── similarity.py
 │   │
@@ -638,6 +711,9 @@ llm-evaluation-platform/
 │   ├── test_evaluation_runner.py
 │   ├── test_llm_judge.py
 │   ├── test_llm_judge_accuracy.py
+│   ├── test_metric_accuracy.py
+│   ├── test_normalized_match.py
+│   ├── test_numeric_match.py
 │   └── ...
 │
 ├── .github/workflows/ci.yml
