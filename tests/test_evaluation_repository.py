@@ -1,8 +1,8 @@
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
 
 from app.models import (
     Dataset,
@@ -348,7 +348,7 @@ def test_sqlite_repository_round_trips_full_run(tmp_path) -> None:
                 overall_score=1.0,
             ),
         ],
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(UTC),
         error="Invalid LLM judge response: MAYBE",
     )
 

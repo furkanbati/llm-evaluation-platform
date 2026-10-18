@@ -40,4 +40,3 @@ class EvaluatorRegistry:
         return sorted(self._evaluators.keys())
 
 
-        

@@ -8,7 +8,6 @@ from uuid import UUID
 from app.models import EvaluationRun, EvaluationStatus
 from app.storage.base import BaseEvaluationRepository
 
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS evaluation_runs (
     id TEXT PRIMARY KEY,

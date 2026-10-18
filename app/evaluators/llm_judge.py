@@ -5,7 +5,6 @@ from app.services.model_client import ModelClient
 
 from .base import Evaluator
 
-
 DATA_TAGS = (
     "question",
     "expected_answer",

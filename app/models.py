@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
@@ -114,7 +114,7 @@ class EvaluationRun(BaseModel):
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
     completed_at: datetime | None = None
     error: str | None = Field(default=None, max_length=1_000)

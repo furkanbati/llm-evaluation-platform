@@ -1,6 +1,7 @@
 from app.evaluators.base import Evaluator
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
+from app.evaluators.similarity import SimilarityEvaluator
 from app.models import DatasetItem, MetricResult
 from app.services.evaluation_engine import EvaluationEngine
 
@@ -207,7 +208,6 @@ def test_engine_raises_error_for_unknown_metric() -> None:
     else:
         raise AssertionError("Expected ValueError for unknown metric")
 
-from app.evaluators.similarity import SimilarityEvaluator
 
 
 def test_engine_runs_similarity_metric() -> None:

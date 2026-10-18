@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models import (
     Dataset,
@@ -10,7 +10,6 @@ from app.services.evaluation_engine import EvaluationEngine
 from app.services.model_client import ModelClient
 from app.storage.base import BaseEvaluationRepository
 from app.storage.evaluation_repository import EvaluationRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +150,7 @@ class EvaluationRunner:
                 results.append(result)
 
             evaluation_run.results = results
-            evaluation_run.completed_at = datetime.now(timezone.utc)
+            evaluation_run.completed_at = datetime.now(UTC)
             evaluation_run.status = EvaluationStatus.COMPLETED
 
         except Exception as exc:
@@ -161,7 +160,7 @@ class EvaluationRunner:
             )
 
             evaluation_run.error = self._format_error(exc)
-            evaluation_run.completed_at = datetime.now(timezone.utc)
+            evaluation_run.completed_at = datetime.now(UTC)
             evaluation_run.status = EvaluationStatus.FAILED
 
         return self._repository.save(evaluation_run)
@@ -184,7 +183,7 @@ class EvaluationRunner:
 
         for evaluation_run in interrupted:
             evaluation_run.error = INTERRUPTED_ERROR
-            evaluation_run.completed_at = datetime.now(timezone.utc)
+            evaluation_run.completed_at = datetime.now(UTC)
             evaluation_run.status = EvaluationStatus.FAILED
 
             self._repository.save(evaluation_run)
