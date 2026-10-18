@@ -151,6 +151,50 @@ class EvaluationRun(BaseModel):
     error: str | None = Field(default=None, max_length=1_000)
 
 
+class EvaluationRunListItem(BaseModel):
+    """An evaluation run without its dataset and per-item results.
+
+    Used by list responses; the full run is available by ID.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    dataset_id: UUID
+    dataset_name: str | None
+    model_name: str
+    metrics: list[str]
+    judge_model_name: str | None
+    generation_options: GenerationOptions
+    status: EvaluationStatus
+    item_count: int = Field(ge=0)
+    created_at: datetime
+    completed_at: datetime | None
+    error_code: EvaluationErrorCode | None
+    error: str | None
+
+    @classmethod
+    def from_run(cls, run: EvaluationRun) -> "EvaluationRunListItem":
+        # Runs stored before datasets were recorded only have results.
+        item_count = len(run.dataset.items) if run.dataset else len(run.results)
+
+        return cls(
+            id=run.id,
+            dataset_id=run.dataset_id,
+            dataset_name=run.dataset.name if run.dataset else None,
+            model_name=run.model_name,
+            metrics=run.metrics,
+            judge_model_name=run.judge_model_name,
+            generation_options=run.generation_options,
+            status=run.status,
+            item_count=item_count,
+            created_at=run.created_at,
+            completed_at=run.completed_at,
+            error_code=run.error_code,
+            error=run.error,
+        )
+
+
 class HealthResponse(BaseModel):
     """Health check response."""
 

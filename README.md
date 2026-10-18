@@ -381,6 +381,8 @@ Example:
 GET /evaluations?status=completed&model_name=llama3&limit=10&offset=0
 ```
 
+The list returns a lightweight view of each run without its dataset and per-item results: `id`, `dataset_id`, `dataset_name`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `status`, `item_count`, `created_at`, `completed_at`, `error_code`, and `error`. Use `GET /evaluations/{evaluation_id}` for the full run.
+
 `limit` must be between 1 and 1000 (default: 100) and `offset` must be 0 or greater. Invalid values return `422 Unprocessable Entity`. Results are returned in creation order.
 
 ---

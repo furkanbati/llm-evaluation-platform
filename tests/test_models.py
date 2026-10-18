@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +9,7 @@ from app.models import (
     EvaluationRequest,
     EvaluationResult,
     EvaluationRun,
+    EvaluationRunListItem,
     EvaluationStatus,
     EvaluationSummary,
     GenerationOptions,
@@ -299,3 +300,55 @@ def test_generation_options_reject_out_of_range_temperature(
 def test_generation_options_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         GenerationOptions(top_k=10)
+
+
+def test_list_item_counts_dataset_items() -> None:
+    dataset = Dataset(
+        name="capital-test",
+        items=[
+            DatasetItem(input="q1", expected_output="a1"),
+            DatasetItem(input="q2", expected_output="a2"),
+        ],
+    )
+
+    run = EvaluationRun(
+        dataset_id=dataset.id,
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    item = EvaluationRunListItem.from_run(run)
+
+    assert item.dataset_name == "capital-test"
+    assert item.item_count == 2
+    assert item.metrics == ["exact_match"]
+
+
+def test_list_item_handles_runs_without_stored_dataset() -> None:
+    item_id = uuid4()
+
+    run = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status=EvaluationStatus.COMPLETED,
+        results=[
+            EvaluationResult(
+                item_id=item_id,
+                generated_output="Paris",
+                metrics=[
+                    MetricResult(
+                        metric_name="exact_match",
+                        score=1.0,
+                        passed=True,
+                    ),
+                ],
+                overall_score=1.0,
+            ),
+        ],
+    )
+
+    item = EvaluationRunListItem.from_run(run)
+
+    assert item.dataset_name is None
+    assert item.item_count == 1

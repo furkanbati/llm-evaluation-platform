@@ -31,6 +31,7 @@ from app.models import (
     ErrorResponse,
     EvaluationRequest,
     EvaluationRun,
+    EvaluationRunListItem,
     EvaluationStatus,
     EvaluationSummary,
     GenerationOptions,
@@ -267,7 +268,7 @@ def create_evaluation(
 
 @app.get(
     "/evaluations",
-    response_model=list[EvaluationRun],
+    response_model=list[EvaluationRunListItem],
     responses={
         500: {
             "model": ErrorResponse,
@@ -279,13 +280,17 @@ def list_evaluations(
     model_name: str | None = None,
     limit: int = Query(default=100, ge=1, le=1_000),
     offset: int = Query(default=0, ge=0),
-) -> list[EvaluationRun]:
-    return evaluation_runner.repository.list(
+) -> list[EvaluationRunListItem]:
+    """List runs without datasets and results; fetch a run by ID for those."""
+
+    evaluations = evaluation_runner.repository.list(
         status=status,
         model_name=model_name,
         limit=limit,
         offset=offset,
     )
+
+    return [EvaluationRunListItem.from_run(evaluation) for evaluation in evaluations]
 
 
 @app.get(

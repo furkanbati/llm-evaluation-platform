@@ -1513,3 +1513,55 @@ def test_create_evaluation_releases_slot_after_completion(
 
     assert response.status_code == 202
     assert immediate_evaluation_executor.in_flight == 0
+
+
+def test_list_evaluations_omits_dataset_and_results(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    created = client.post(
+        "/evaluations",
+        json=EVALUATION_REQUEST,
+    ).json()
+
+    response = client.get("/evaluations")
+
+    assert response.status_code == 200
+
+    [item] = response.json()
+
+    assert set(item) == {
+        "id",
+        "dataset_id",
+        "dataset_name",
+        "model_name",
+        "metrics",
+        "judge_model_name",
+        "generation_options",
+        "status",
+        "item_count",
+        "created_at",
+        "completed_at",
+        "error_code",
+        "error",
+    }
+    assert item["id"] == created["id"]
+    assert item["dataset_name"] == "math-test"
+    assert item["item_count"] == 1
+    assert item["status"] == "completed"
+
+    detail = client.get(f"/evaluations/{created['id']}").json()
+
+    assert detail["dataset"]["items"][0]["input"] == "2 + 2"
+    assert len(detail["results"]) == 1
