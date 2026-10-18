@@ -11,6 +11,7 @@ class SimilarityEvaluator(Evaluator):
         self,
         expected_output: str,
         generated_output: str,
+        input_text: str | None = None,
     ) -> MetricResult:
 
         score = SequenceMatcher(
