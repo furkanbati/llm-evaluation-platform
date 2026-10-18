@@ -1,22 +1,26 @@
+import threading
 from uuid import UUID
 
 from app.models import EvaluationRun, EvaluationStatus
 
 
 class EvaluationRepository:
-    """In-memory repository for evaluation runs."""
+    """Thread-safe in-memory repository for evaluation runs."""
 
     def __init__(self) -> None:
         self._evaluations: dict[UUID, EvaluationRun] = {}
+        self._lock = threading.Lock()
 
     def save(self, evaluation: EvaluationRun) -> EvaluationRun:
         """Store an evaluation run and return it."""
-        self._evaluations[evaluation.id] = evaluation
+        with self._lock:
+            self._evaluations[evaluation.id] = evaluation
         return evaluation
 
     def get(self, evaluation_id: UUID) -> EvaluationRun | None:
         """Return an evaluation run by ID, if it exists."""
-        return self._evaluations.get(evaluation_id)
+        with self._lock:
+            return self._evaluations.get(evaluation_id)
 
     def delete(
         self,
@@ -24,10 +28,11 @@ class EvaluationRepository:
     ) -> bool:
         """Delete an evaluation by id."""
 
-        if evaluation_id not in self._evaluations:
-            return False
+        with self._lock:
+            if evaluation_id not in self._evaluations:
+                return False
 
-        del self._evaluations[evaluation_id]
+            del self._evaluations[evaluation_id]
 
         return True
 
@@ -38,9 +43,10 @@ class EvaluationRepository:
     ) -> list[EvaluationRun]:
         """Return evaluations matching the provided filters."""
 
-        evaluations = list(
-            self._evaluations.values()
-        )
+        with self._lock:
+            evaluations = list(
+                self._evaluations.values()
+            )
 
         if status is not None:
             evaluations = [
