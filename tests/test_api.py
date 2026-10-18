@@ -77,6 +77,21 @@ def test_create_evaluation(
         },
     )
 
+    assert response.status_code == 202
+
+    accepted = response.json()
+
+    assert accepted["status"] == "pending"
+    assert accepted["results"] == []
+    assert accepted["completed_at"] is None
+    assert response.headers["location"] == (
+        f"/evaluations/{accepted['id']}"
+    )
+
+    response = client.get(
+        f"/evaluations/{accepted['id']}",
+    )
+
     assert response.status_code == 200
 
     data = response.json()
@@ -157,7 +172,7 @@ def test_create_evaluation_returns_500_for_unexpected_error(
     monkeypatch,
 ) -> None:
     class FailingRunner:
-        def run(
+        def create_run(
             self,
             dataset,
             model_name,
@@ -200,7 +215,7 @@ def test_create_evaluation_returns_error_detail_for_unexpected_error(
     monkeypatch,
 ) -> None:
     class FailingRunner:
-        def run(
+        def create_run(
             self,
             dataset,
             model_name,
@@ -243,7 +258,7 @@ def test_create_evaluation_hides_internal_error_details(
     monkeypatch,
 ) -> None:
     class FailingRunner:
-        def run(
+        def create_run(
             self,
             dataset,
             model_name,
@@ -290,7 +305,7 @@ def test_create_evaluation_returns_json_for_internal_errors(
     monkeypatch,
 ) -> None:
     class FailingRunner:
-        def run(
+        def create_run(
             self,
             dataset,
             model_name,
@@ -372,7 +387,7 @@ def test_get_evaluation_returns_saved_evaluation(
         },
     )
 
-    assert create_response.status_code == 200
+    assert create_response.status_code == 202
 
     evaluation_id = create_response.json()["id"]
 
@@ -504,7 +519,7 @@ def test_list_evaluations_returns_saved_evaluations(
             },
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
     response = client.get("/evaluations")
 
@@ -959,6 +974,12 @@ def test_create_evaluation_supports_similarity_metric(
         },
     )
 
+    assert response.status_code == 202
+
+    response = client.get(
+        f"/evaluations/{response.json()['id']}",
+    )
+
     assert response.status_code == 200
 
     data = response.json()
@@ -1029,6 +1050,12 @@ def test_create_evaluation_supports_llm_judge_metric(
         },
     )
 
+    assert response.status_code == 202
+
+    response = client.get(
+        f"/evaluations/{response.json()['id']}",
+    )
+
     assert response.status_code == 200
 
     data = response.json()
@@ -1065,3 +1092,120 @@ def test_runner_uses_separate_judge_model_client() -> None:
     judge = runner._engine._registry.get("llm_judge")
 
     assert judge._model_client is judge_client
+
+
+def test_create_evaluation_returns_before_running_evaluation(
+    monkeypatch,
+) -> None:
+    from fastapi import BackgroundTasks, Response
+
+    from app.models import EvaluationRequest
+
+    class CountingModelClient(ModelClient):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+        ) -> list[str]:
+            self.calls += 1
+            return ["4"]
+
+    model_client = CountingModelClient()
+
+    runner = create_evaluation_runner(
+        model_client=model_client,
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    background_tasks = BackgroundTasks()
+
+    accepted = api.create_evaluation(
+        request=EvaluationRequest(
+            dataset={
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            model_name="llama3",
+            metrics=["exact_match"],
+        ),
+        background_tasks=background_tasks,
+        response=Response(),
+    )
+
+    assert accepted.status == "pending"
+    assert model_client.calls == 0
+    assert len(background_tasks.tasks) == 1
+
+    task = background_tasks.tasks[0]
+    task.func(*task.args, **task.kwargs)
+
+    stored = runner.repository.get(accepted.id)
+
+    assert model_client.calls == 1
+    assert stored.status == "completed"
+    assert accepted.status == "pending"
+
+
+def test_create_evaluation_reports_failure_through_get(
+    monkeypatch,
+) -> None:
+    class UnavailableModelClient(ModelClient):
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+        ) -> list[str]:
+            raise RuntimeError("Ollama is unavailable")
+
+    runner = create_evaluation_runner(
+        model_client=UnavailableModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {
+                        "input": "2 + 2",
+                        "expected_output": "4",
+                    },
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    )
+
+    assert response.status_code == 202
+
+    response = client.get(
+        f"/evaluations/{response.json()['id']}",
+    )
+
+    data = response.json()
+
+    assert data["status"] == "failed"
+    assert data["error"] == "Ollama is unavailable"
