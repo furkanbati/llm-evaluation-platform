@@ -114,6 +114,7 @@ class EvaluationRun(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     completed_at: datetime | None = None
+    error: str | None = Field(default=None, max_length=1_000)
 
 
 class HealthResponse(BaseModel):

@@ -15,6 +15,25 @@ class EvaluationEngine:
     ) -> None:
         self._registry = registry
 
+    def validate_metrics(
+        self,
+        metrics: list[str],
+    ) -> None:
+        """Raise ValueError if any metric is not registered."""
+
+        available = set(self._registry.available_metrics())
+
+        unknown = [
+            metric_name
+            for metric_name in metrics
+            if metric_name not in available
+        ]
+
+        if unknown:
+            raise ValueError(
+                f"Unknown metric: {', '.join(unknown)}"
+            )
+
     def evaluate(
         self,
         item: DatasetItem,

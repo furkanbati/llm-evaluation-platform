@@ -150,6 +150,7 @@ def test_create_evaluation_returns_400_for_unknown_metric(
 
     assert response.status_code == 400
     assert "unknown_metric" in response.json()["detail"]
+    assert runner.repository.list() == []
 
 
 def test_create_evaluation_returns_500_for_unexpected_error(
@@ -467,6 +468,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "results",
         "created_at",
         "completed_at",
+        "error",
     }
 
 def test_list_evaluations_returns_saved_evaluations(
