@@ -178,3 +178,27 @@ def test_evaluation_limits_use_environment_variables(
 
     assert config.MAX_CONCURRENT_EVALUATIONS == 4
     assert config.MAX_QUEUED_EVALUATIONS == 20
+
+
+def test_semantic_similarity_settings_use_defaults(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("SEMANTIC_SIMILARITY_MODEL", raising=False)
+    monkeypatch.delenv("SEMANTIC_SIMILARITY_THRESHOLD", raising=False)
+
+    importlib.reload(config)
+
+    assert config.SEMANTIC_SIMILARITY_MODEL == "nomic-embed-text"
+    assert config.SEMANTIC_SIMILARITY_THRESHOLD == 0.73
+
+
+def test_semantic_similarity_settings_use_environment_variables(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SEMANTIC_SIMILARITY_MODEL", "mxbai-embed-large")
+    monkeypatch.setenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.6")
+
+    importlib.reload(config)
+
+    assert config.SEMANTIC_SIMILARITY_MODEL == "mxbai-embed-large"
+    assert config.SEMANTIC_SIMILARITY_THRESHOLD == 0.6

@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app.evaluators.normalized_match import NormalizedMatchEvaluator
 from app.evaluators.numeric_match import NumericMatchEvaluator
 
@@ -117,3 +119,29 @@ def test_token_recall_accuracy_on_labeled_cases() -> None:
 
     assert len(cases) - len(wrong) >= 18, wrong
     assert accepted_wrong == ["wrong-6", "wrong-7", "verbose-2"]
+
+
+@pytest.mark.integration
+def test_semantic_similarity_accuracy_on_labeled_cases() -> None:
+    # Measured with nomic-embed-text and the default 0.73 threshold, which
+    # was chosen on a separate calibration set: 15/23. Embeddings track the
+    # topic rather than correctness, so wrong answers on the same topic
+    # ("1944" for "1945") can pass. Allows a one-case margin.
+    from app.config import (
+        OLLAMA_BASE_URL,
+        SEMANTIC_SIMILARITY_MODEL,
+        SEMANTIC_SIMILARITY_THRESHOLD,
+    )
+    from app.evaluators.semantic_similarity import SemanticSimilarityEvaluator
+    from app.services.ollama_embedding_client import OllamaEmbeddingClient
+
+    evaluator = SemanticSimilarityEvaluator(
+        embedding_client=OllamaEmbeddingClient(OLLAMA_BASE_URL),
+        model_name=SEMANTIC_SIMILARITY_MODEL,
+        threshold=SEMANTIC_SIMILARITY_THRESHOLD,
+    )
+
+    cases = load_cases()
+    wrong = wrong_decisions(evaluator, cases)
+
+    assert len(cases) - len(wrong) >= 14, wrong
