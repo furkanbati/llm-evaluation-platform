@@ -8,6 +8,10 @@ services:
 
     environment:
       OLLAMA_BASE_URL: "http://ollama:11434"
+      DATABASE_PATH: "/app/data/evaluations.db"
+
+    volumes:
+      - evaluation_data:/app/data
 
     depends_on:
       ollama:
@@ -51,3 +55,4 @@ services:
 
 volumes:
   ollama_data:
+  evaluation_data:
