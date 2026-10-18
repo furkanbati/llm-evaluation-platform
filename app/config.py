@@ -16,3 +16,7 @@ JUDGE_MODEL_NAME = os.getenv(
     "llama3",
 )
 
+JUDGE_TEMPERATURE = float(
+    os.getenv("JUDGE_TEMPERATURE", "0.0")
+)
+

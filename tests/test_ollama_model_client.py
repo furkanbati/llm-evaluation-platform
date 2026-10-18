@@ -61,3 +61,66 @@ def test_ollama_model_client_connects_to_real_ollama() -> None:
 
     assert len(outputs) == 1
     assert outputs[0]
+
+def _capture_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict]:
+    payloads: list[dict] = []
+
+    def mock_post(
+        *args,
+        **kwargs,
+    ) -> httpx.Response:
+        payloads.append(kwargs["json"])
+
+        return httpx.Response(
+            status_code=200,
+            json={"response": "Paris"},
+            request=httpx.Request(
+                method="POST",
+                url="http://ollama:11434/api/generate",
+            ),
+        )
+
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        mock_post,
+    )
+
+    return payloads
+
+
+def test_ollama_model_client_sends_options_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = _capture_post(monkeypatch)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+        options={"temperature": 0.0},
+    )
+
+    client.generate(
+        model_name="llama3",
+        inputs=["question"],
+    )
+
+    assert payloads[0]["options"] == {"temperature": 0.0}
+
+
+def test_ollama_model_client_omits_options_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = _capture_post(monkeypatch)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    client.generate(
+        model_name="llama3",
+        inputs=["question"],
+    )
+
+    assert "options" not in payloads[0]
