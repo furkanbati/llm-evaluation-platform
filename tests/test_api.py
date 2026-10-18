@@ -1005,6 +1005,7 @@ def test_list_metrics_returns_available_metrics() -> None:
             "numeric_match",
             "similarity",
             "token_f1",
+            "token_recall",
         ],
     }
 
