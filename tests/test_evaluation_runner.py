@@ -469,3 +469,72 @@ def test_runner_truncates_long_error_messages() -> None:
 
     assert result.status == EvaluationStatus.FAILED
     assert len(result.error) == 1_000
+
+
+def test_create_run_stores_pending_run_without_generating() -> None:
+    model_client = RecordingModelClient()
+    repository = EvaluationRepository()
+
+    runner = create_runner(
+        model_client=model_client,
+        repository=repository,
+    )
+
+    run = runner.create_run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert run.status == EvaluationStatus.PENDING
+    assert repository.get(run.id) is run
+    assert model_client.calls == 0
+
+
+def test_execute_completes_created_run() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    dataset = create_dataset()
+
+    run = runner.create_run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    result = runner.execute(
+        evaluation_run=run,
+        dataset=dataset,
+        metrics=["exact_match"],
+    )
+
+    assert result is run
+    assert result.status == EvaluationStatus.COMPLETED
+    assert result.completed_at is not None
+    assert len(result.results) == 1
+
+
+def test_execute_does_not_raise_when_engine_fails() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+        engine=FailingEvaluationEngine(),
+    )
+
+    dataset = create_dataset()
+
+    run = runner.create_run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    result = runner.execute(
+        evaluation_run=run,
+        dataset=dataset,
+        metrics=["exact_match"],
+    )
+
+    assert result.status == EvaluationStatus.FAILED
+    assert result.error == "Evaluation failed"

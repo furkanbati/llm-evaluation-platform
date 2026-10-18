@@ -41,10 +41,32 @@ class EvaluationRunner:
         metrics: list[str],
         generated_outputs: list[str] | None = None,
     ) -> EvaluationRun:
-        """Evaluate all dataset items and return an evaluation run.
+        """Create and execute an evaluation run synchronously."""
+
+        evaluation_run = self.create_run(
+            dataset=dataset,
+            model_name=model_name,
+            metrics=metrics,
+            generated_outputs=generated_outputs,
+        )
+
+        return self.execute(
+            evaluation_run=evaluation_run,
+            dataset=dataset,
+            metrics=metrics,
+            generated_outputs=generated_outputs,
+        )
+
+    def create_run(
+        self,
+        dataset: Dataset,
+        model_name: str,
+        metrics: list[str],
+        generated_outputs: list[str] | None = None,
+    ) -> EvaluationRun:
+        """Validate the request and store a PENDING evaluation run.
 
         Invalid requests raise ValueError before a run is created.
-        Failures during execution are recorded on a FAILED run.
         """
 
         self._validate_request(
@@ -59,7 +81,21 @@ class EvaluationRunner:
             status=EvaluationStatus.PENDING,
         )
 
-        self._repository.save(evaluation_run)
+        return self._repository.save(evaluation_run)
+
+    def execute(
+        self,
+        evaluation_run: EvaluationRun,
+        dataset: Dataset,
+        metrics: list[str],
+        generated_outputs: list[str] | None = None,
+    ) -> EvaluationRun:
+        """Execute a created run and record its outcome.
+
+        Never raises: failures are recorded on a FAILED run. The status
+        is assigned last so readers never see a finished status without
+        its results or completion time.
+        """
 
         evaluation_run.status = EvaluationStatus.RUNNING
         self._repository.save(evaluation_run)
@@ -72,7 +108,7 @@ class EvaluationRunner:
                 ]
 
                 generated_outputs = self._model_client.generate(
-                    model_name=model_name,
+                    model_name=evaluation_run.model_name,
                     inputs=inputs,
                 )
 
@@ -99,10 +135,8 @@ class EvaluationRunner:
                 results.append(result)
 
             evaluation_run.results = results
-            evaluation_run.status = EvaluationStatus.COMPLETED
             evaluation_run.completed_at = datetime.now(timezone.utc)
-
-            return self._repository.save(evaluation_run)
+            evaluation_run.status = EvaluationStatus.COMPLETED
 
         except Exception as exc:
             logger.exception(
@@ -110,11 +144,11 @@ class EvaluationRunner:
                 evaluation_run.id,
             )
 
-            evaluation_run.status = EvaluationStatus.FAILED
             evaluation_run.error = self._format_error(exc)
             evaluation_run.completed_at = datetime.now(timezone.utc)
+            evaluation_run.status = EvaluationStatus.FAILED
 
-            return self._repository.save(evaluation_run)
+        return self._repository.save(evaluation_run)
 
     def _validate_request(
         self,

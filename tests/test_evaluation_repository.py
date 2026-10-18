@@ -1,3 +1,4 @@
+import threading
 from uuid import uuid4
 
 from app.models import EvaluationRun, EvaluationStatus
@@ -204,3 +205,34 @@ def test_delete_returns_false_for_unknown_id() -> None:
     )
 
     assert result is False
+
+def test_repository_handles_concurrent_saves_and_lists() -> None:
+    repository = EvaluationRepository()
+    errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            for _ in range(200):
+                repository.save(
+                    EvaluationRun(
+                        dataset_id=uuid4(),
+                        model_name="llama3",
+                    )
+                )
+                repository.list()
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker)
+        for _ in range(8)
+    ]
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(repository.list()) == 1_600
