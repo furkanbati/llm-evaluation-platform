@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class EvaluationStatus(StrEnum):
@@ -56,6 +56,54 @@ class Dataset(BaseModel):
     items: list[DatasetItem] = Field(min_length=1)
 
 
+class PassRule(StrEnum):
+    """How the metric results of an item decide whether it passed."""
+
+    ALL_METRICS = "all_metrics"
+    ANY_METRIC = "any_metric"
+    OVERALL_SCORE = "overall_score"
+
+
+DEFAULT_PASS_THRESHOLD = 0.5
+
+
+class AggregationOptions(BaseModel):
+    """How metric results combine into an item score and pass decision.
+
+    Metrics without a weight count with weight 1.0. `pass_threshold`
+    applies only to the `overall_score` rule.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric_weights: dict[str, float] = Field(default_factory=dict)
+    pass_rule: PassRule = PassRule.ALL_METRICS
+    pass_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @field_validator("metric_weights")
+    @classmethod
+    def validate_weights(cls, weights: dict[str, float]) -> dict[str, float]:
+        if any(weight < 0 for weight in weights.values()):
+            raise ValueError("metric weights cannot be negative")
+
+        return weights
+
+    @model_validator(mode="after")
+    def resolve_threshold(self) -> "AggregationOptions":
+        if self.pass_rule == PassRule.OVERALL_SCORE:
+            if self.pass_threshold is None:
+                self.pass_threshold = DEFAULT_PASS_THRESHOLD
+        elif self.pass_threshold is not None:
+            raise ValueError(
+                "pass_threshold only applies to the overall_score pass rule"
+            )
+
+        return self
+
+    def weight_for(self, metric_name: str) -> float:
+        return self.metric_weights.get(metric_name, 1.0)
+
+
 class GenerationOptions(BaseModel):
     """Sampling settings for the evaluated model.
 
@@ -84,6 +132,7 @@ class EvaluationRequest(BaseModel):
     model_name: str = Field(min_length=1, max_length=200)
     metrics: list[str] = Field(min_length=1)
     generation_options: GenerationOptions | None = None
+    aggregation: AggregationOptions | None = None
 
     @field_validator("metrics")
     @classmethod
@@ -99,6 +148,26 @@ class EvaluationRequest(BaseModel):
             raise ValueError("metric names must be unique")
 
         return normalized
+
+    @model_validator(mode="after")
+    def validate_metric_weights(self) -> "EvaluationRequest":
+        """Ensure weights refer to selected metrics and are not all zero."""
+
+        if self.aggregation is None:
+            return self
+
+        unknown = sorted(set(self.aggregation.metric_weights) - set(self.metrics))
+
+        if unknown:
+            raise ValueError(
+                f"metric_weights refer to metrics that are not selected: "
+                f"{', '.join(unknown)}"
+            )
+
+        if not any(self.aggregation.weight_for(metric) > 0 for metric in self.metrics):
+            raise ValueError("at least one selected metric needs a positive weight")
+
+        return self
 
 
 class MetricResult(BaseModel):
@@ -126,6 +195,8 @@ class EvaluationResult(BaseModel):
     generated_output: str = Field(min_length=1, max_length=20_000)
     metrics: list[MetricResult] = Field(min_length=1)
     overall_score: float = Field(ge=0.0, le=1.0)
+    # None for results stored before pass decisions were recorded.
+    passed: bool | None = None
 
 
 class EvaluationRun(BaseModel):
@@ -143,6 +214,7 @@ class EvaluationRun(BaseModel):
     metrics: list[str] = Field(default_factory=list)
     judge_model_name: str | None = Field(default=None, max_length=200)
     generation_options: GenerationOptions = Field(default_factory=GenerationOptions)
+    aggregation: AggregationOptions = Field(default_factory=AggregationOptions)
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -166,6 +238,7 @@ class EvaluationRunListItem(BaseModel):
     metrics: list[str]
     judge_model_name: str | None
     generation_options: GenerationOptions
+    aggregation: AggregationOptions
     status: EvaluationStatus
     item_count: int = Field(ge=0)
     created_at: datetime
@@ -186,6 +259,7 @@ class EvaluationRunListItem(BaseModel):
             metrics=run.metrics,
             judge_model_name=run.judge_model_name,
             generation_options=run.generation_options,
+            aggregation=run.aggregation,
             status=run.status,
             item_count=item_count,
             created_at=run.created_at,

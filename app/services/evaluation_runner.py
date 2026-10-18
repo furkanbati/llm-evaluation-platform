@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from app.errors import EvaluationError, InvalidModelOutputError
 from app.models import (
+    AggregationOptions,
     Dataset,
     EvaluationErrorCode,
     EvaluationRun,
@@ -52,6 +53,7 @@ class EvaluationRunner:
         metrics: list[str],
         generated_outputs: list[str] | None = None,
         generation_options: GenerationOptions | None = None,
+        aggregation: AggregationOptions | None = None,
     ) -> EvaluationRun:
         """Create and execute an evaluation run synchronously."""
 
@@ -61,6 +63,7 @@ class EvaluationRunner:
             metrics=metrics,
             generated_outputs=generated_outputs,
             generation_options=generation_options,
+            aggregation=aggregation,
         )
 
         return self.execute(
@@ -77,6 +80,7 @@ class EvaluationRunner:
         metrics: list[str],
         generated_outputs: list[str] | None = None,
         generation_options: GenerationOptions | None = None,
+        aggregation: AggregationOptions | None = None,
     ) -> EvaluationRun:
         """Validate the request and store a PENDING evaluation run.
 
@@ -104,6 +108,7 @@ class EvaluationRunner:
             generation_options=self._resolve_generation_options(
                 generation_options,
             ),
+            aggregation=aggregation or AggregationOptions(),
             status=EvaluationStatus.PENDING,
         )
 
@@ -170,6 +175,7 @@ class EvaluationRunner:
                     item=item,
                     generated_output=generated_output,
                     metrics=metrics,
+                    aggregation=evaluation_run.aggregation,
                 )
 
                 results.append(result)

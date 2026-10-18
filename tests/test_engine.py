@@ -2,7 +2,7 @@ from app.evaluators.base import Evaluator
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.evaluators.similarity import SimilarityEvaluator
-from app.models import DatasetItem, MetricResult
+from app.models import AggregationOptions, DatasetItem, MetricResult
 from app.services.evaluation_engine import EvaluationEngine
 
 
@@ -312,3 +312,95 @@ def test_engine_passes_dataset_input_to_evaluators() -> None:
     )
 
     assert evaluator.input_text == "What is the capital of France?"
+
+
+def create_fixed_engine(scores: dict[str, float]) -> EvaluationEngine:
+    registry = EvaluatorRegistry()
+
+    for name, score in scores.items():
+        registry.register(name, FixedScoreEvaluator(name, score))
+
+    return EvaluationEngine(registry)
+
+
+ITEM = DatasetItem(input="q", expected_output="a")
+
+
+def test_engine_default_aggregation_matches_plain_mean() -> None:
+    engine = create_fixed_engine({"a": 1.0, "b": 0.0, "c": 0.5})
+
+    result = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b", "c"],
+    )
+
+    assert result.overall_score == (1.0 + 0.0 + 0.5) / 3
+    assert result.passed is False
+
+
+def test_engine_uses_metric_weights() -> None:
+    engine = create_fixed_engine({"a": 1.0, "b": 0.0})
+
+    result = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b"],
+        aggregation=AggregationOptions(metric_weights={"a": 3}),
+    )
+
+    assert result.overall_score == 0.75
+
+
+def test_engine_ignores_zero_weight_metrics_for_pass_decision() -> None:
+    engine = create_fixed_engine({"a": 1.0, "b": 0.0})
+
+    result = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b"],
+        aggregation=AggregationOptions(metric_weights={"b": 0}),
+    )
+
+    assert result.overall_score == 1.0
+    assert result.passed is True
+
+
+def test_engine_any_metric_rule() -> None:
+    engine = create_fixed_engine({"a": 1.0, "b": 0.0})
+
+    result = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b"],
+        aggregation=AggregationOptions(pass_rule="any_metric"),
+    )
+
+    assert result.passed is True
+
+
+def test_engine_overall_score_rule_uses_threshold() -> None:
+    engine = create_fixed_engine({"a": 1.0, "b": 0.0, "c": 1.0})
+
+    passing = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b", "c"],
+        aggregation=AggregationOptions(
+            pass_rule="overall_score",
+            pass_threshold=0.6,
+        ),
+    )
+
+    failing = engine.evaluate(
+        item=ITEM,
+        generated_output="output",
+        metrics=["a", "b", "c"],
+        aggregation=AggregationOptions(
+            pass_rule="overall_score",
+            pass_threshold=0.7,
+        ),
+    )
+
+    assert passing.passed is True
+    assert failing.passed is False

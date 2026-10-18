@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import (
+    AggregationOptions,
     Dataset,
     DatasetItem,
     EvaluationRequest,
@@ -15,6 +16,7 @@ from app.models import (
     GenerationOptions,
     MetricResult,
     MetricSummary,
+    PassRule,
 )
 
 
@@ -352,3 +354,60 @@ def test_list_item_handles_runs_without_stored_dataset() -> None:
 
     assert item.dataset_name is None
     assert item.item_count == 1
+
+
+def make_request(**aggregation) -> EvaluationRequest:
+    return EvaluationRequest(
+        dataset={
+            "name": "test",
+            "items": [{"input": "q", "expected_output": "a"}],
+        },
+        model_name="llama3",
+        metrics=["exact_match", "similarity"],
+        aggregation=aggregation,
+    )
+
+
+def test_aggregation_defaults_match_previous_behavior() -> None:
+    options = AggregationOptions()
+
+    assert options.pass_rule == PassRule.ALL_METRICS
+    assert options.pass_threshold is None
+    assert options.weight_for("exact_match") == 1.0
+
+
+def test_aggregation_defaults_threshold_for_overall_score_rule() -> None:
+    options = AggregationOptions(pass_rule="overall_score")
+
+    assert options.pass_threshold == 0.5
+
+
+def test_aggregation_rejects_threshold_for_other_rules() -> None:
+    with pytest.raises(ValidationError, match="pass_threshold"):
+        AggregationOptions(pass_rule="all_metrics", pass_threshold=0.7)
+
+
+def test_aggregation_rejects_negative_weights() -> None:
+    with pytest.raises(ValidationError, match="negative"):
+        AggregationOptions(metric_weights={"exact_match": -1})
+
+
+def test_request_rejects_weights_for_unselected_metrics() -> None:
+    with pytest.raises(ValidationError, match="llm_judge"):
+        make_request(metric_weights={"llm_judge": 2})
+
+
+def test_request_rejects_all_zero_weights() -> None:
+    with pytest.raises(ValidationError, match="positive weight"):
+        make_request(metric_weights={"exact_match": 0, "similarity": 0})
+
+
+def test_request_accepts_valid_aggregation() -> None:
+    request = make_request(
+        metric_weights={"exact_match": 0, "similarity": 2},
+        pass_rule="overall_score",
+        pass_threshold=0.8,
+    )
+
+    assert request.aggregation is not None
+    assert request.aggregation.weight_for("similarity") == 2

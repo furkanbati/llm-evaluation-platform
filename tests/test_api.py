@@ -488,6 +488,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "metrics",
         "judge_model_name",
         "generation_options",
+        "aggregation",
         "status",
         "results",
         "created_at",
@@ -1549,6 +1550,7 @@ def test_list_evaluations_omits_dataset_and_results(
         "metrics",
         "judge_model_name",
         "generation_options",
+        "aggregation",
         "status",
         "item_count",
         "created_at",
@@ -1565,3 +1567,79 @@ def test_list_evaluations_omits_dataset_and_results(
 
     assert detail["dataset"]["items"][0]["input"] == "2 + 2"
     assert len(detail["results"]) == 1
+
+
+def test_create_evaluation_applies_aggregation(
+    monkeypatch,
+) -> None:
+    runner = create_evaluation_runner(
+        model_client=FakeEvaluationWithJudgeModelClient(),
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/evaluations",
+        json={
+            **EVALUATION_REQUEST,
+            "dataset": {
+                "name": "math-test",
+                "items": [{"input": "2 + 2", "expected_output": "4.0"}],
+            },
+            "metrics": ["exact_match", "llm_judge"],
+            "aggregation": {
+                "metric_weights": {"exact_match": 1, "llm_judge": 3},
+                "pass_rule": "overall_score",
+                "pass_threshold": 0.7,
+            },
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["aggregation"] == {
+        "metric_weights": {"exact_match": 1.0, "llm_judge": 3.0},
+        "pass_rule": "overall_score",
+        "pass_threshold": 0.7,
+    }
+
+    evaluation_id = response.json()["id"]
+    detail = client.get(f"/evaluations/{evaluation_id}").json()
+    [item] = detail["results"]
+
+    # exact_match fails ("4" != "4.0") and the judge accepts: (0*1 + 1*3) / 4.
+    assert [metric["passed"] for metric in item["metrics"]] == [False, True]
+    assert item["overall_score"] == 0.75
+    # The default all_metrics rule would have failed this item.
+    assert item["passed"] is True
+
+    summary = client.get(f"/evaluations/{evaluation_id}/summary").json()
+
+    assert summary["passed_items"] == 1
+
+
+def test_create_evaluation_rejects_invalid_aggregation() -> None:
+    client = TestClient(app)
+
+    for aggregation in (
+        {"metric_weights": {"llm_judge": 1}},
+        {"metric_weights": {"exact_match": 0}},
+        {"metric_weights": {"exact_match": -1}},
+        {"pass_rule": "majority"},
+        {"pass_threshold": 0.5},
+        {"pass_rule": "overall_score", "pass_threshold": 1.5},
+    ):
+        response = client.post(
+            "/evaluations",
+            json={
+                **EVALUATION_REQUEST,
+                "aggregation": aggregation,
+            },
+        )
+
+        assert response.status_code == 422, aggregation
