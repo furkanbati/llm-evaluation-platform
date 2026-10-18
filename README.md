@@ -123,6 +123,10 @@ RUNNING
 FAILED
 ```
 
+Failed runs include an `error` field describing the cause, such as a model provider error or an invalid LLM judge response.
+
+Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` before a run is created and before any model calls are made.
+
 ---
 
 # Evaluation Metrics
@@ -404,6 +408,12 @@ Run the complete test suite inside the API container:
 
 ```bash
 docker compose exec evaluation-api python -m pytest
+```
+
+Tests that require a running Ollama instance are marked as `integration`. To run only the unit tests without Ollama:
+
+```bash
+python -m pytest -m "not integration"
 ```
 
 The test suite covers:
