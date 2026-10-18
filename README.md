@@ -124,7 +124,20 @@ RUNNING
 FAILED
 ```
 
-Failed runs include an `error` field describing the cause, such as a model provider error or an invalid LLM judge response.
+Failed runs include an `error_code` and a short `error` message that is safe to show to clients:
+
+| `error_code` | Meaning |
+|---|---|
+| `model_unavailable` | The model provider could not be reached |
+| `model_timeout` | The model provider did not respond in time |
+| `model_not_found` | The requested model is not available on the provider |
+| `model_provider_error` | The provider returned an error or an unexpected response |
+| `invalid_model_output` | The model returned an empty output or the wrong number of outputs |
+| `invalid_judge_response` | The LLM judge answered something other than YES or NO |
+| `interrupted` | The application restarted while the run was in progress |
+| `internal_error` | Any other failure |
+
+The original exception, including provider addresses and system messages, is written only to the server log.
 
 Invalid requests, such as unknown metrics, are rejected with `400 Bad Request` before a run is created and before any model calls are made.
 
@@ -316,6 +329,7 @@ Location: /evaluations/3f6c1b8e-...
   "status": "pending",
   "results": [],
   "completed_at": null,
+  "error_code": null,
   "error": null
 }
 ```
