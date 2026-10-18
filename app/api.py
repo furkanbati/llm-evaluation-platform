@@ -22,12 +22,15 @@ from app.config import (
     MAX_CONCURRENT_EVALUATIONS,
     MAX_QUEUED_EVALUATIONS,
     OLLAMA_BASE_URL,
+    SEMANTIC_SIMILARITY_MODEL,
+    SEMANTIC_SIMILARITY_THRESHOLD,
 )
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.llm_judge import LLMJudgeEvaluator
 from app.evaluators.normalized_match import NormalizedMatchEvaluator
 from app.evaluators.numeric_match import NumericMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
+from app.evaluators.semantic_similarity import SemanticSimilarityEvaluator
 from app.evaluators.similarity import SimilarityEvaluator
 from app.evaluators.token_f1 import TokenF1Evaluator, TokenRecallEvaluator
 from app.models import (
@@ -40,6 +43,7 @@ from app.models import (
     GenerationOptions,
     HealthResponse,
 )
+from app.services.embedding_client import EmbeddingClient
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_executor import (
     EvaluationExecutor,
@@ -50,6 +54,7 @@ from app.services.evaluation_summary_service import (
     EvaluationSummaryService,
 )
 from app.services.model_client import ModelClient
+from app.services.ollama_embedding_client import OllamaEmbeddingClient
 from app.services.ollama_model_client import OllamaModelClient
 from app.storage.base import BaseEvaluationRepository
 from app.storage.evaluation_repository import EvaluationRepository
@@ -105,6 +110,7 @@ def create_evaluation_runner(
     model_client: ModelClient | None = None,
     repository: BaseEvaluationRepository | None = None,
     judge_model_client: ModelClient | None = None,
+    embedding_client: EmbeddingClient | None = None,
 ) -> EvaluationRunner:
     """Create the evaluation runner with registered evaluators.
 
@@ -143,6 +149,16 @@ def create_evaluation_runner(
     registry.register(
         "token_recall",
         TokenRecallEvaluator(),
+    )
+
+    registry.register(
+        "semantic_similarity",
+        SemanticSimilarityEvaluator(
+            embedding_client=embedding_client
+            or OllamaEmbeddingClient(base_url=OLLAMA_BASE_URL),
+            model_name=SEMANTIC_SIMILARITY_MODEL,
+            threshold=SEMANTIC_SIMILARITY_THRESHOLD,
+        ),
     )
 
     if judge_model_client is None:
