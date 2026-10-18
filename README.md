@@ -655,15 +655,31 @@ The project currently does not include:
 
 Possible next steps include:
 
+**Evaluation**
+
 * Embedding-based semantic similarity
-* Weighted metrics
-* Dataset versioning
-* Model-to-model comparison
-* Evaluation dashboards
+* Model-to-model comparison on the same dataset
 * RAG-specific metrics
-* Evaluation reports
-* Batch evaluation jobs
-* Additional LLM judge strategies
+* Additional LLM judge strategies, such as judges that explain their decision
+* Evaluation reports and dashboards
+
+**LLM judge**
+
+* Resist injected instructions that push the judge toward NO; the labeled accuracy set still has one such miss
+* A larger labeled accuracy set, checked against more judge models
+* Report whether a provider failure came from the judge or from the evaluated model
+
+**Operations**
+
+* A durable job queue, so queued evaluations survive restarts and limits apply across multiple API workers
+* A `Retry-After` header on `503` responses and retries for transient provider errors
+* Building list responses without loading full runs from the database
+* Migrations for stored runs when the run schema changes
+* More generation options, such as `top_p` and `num_predict`
+
+**Data**
+
+* Dataset versioning
 
 ---
 
