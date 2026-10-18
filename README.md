@@ -14,7 +14,7 @@ The platform provides a structured evaluation workflow with pluggable evaluators
 * LLM-as-a-Judge evaluation
 * Pluggable evaluator registry
 * Evaluation run lifecycle tracking
-* Evaluation result storage
+* Persistent SQLite storage of evaluation runs
 * Evaluation summaries and metric statistics
 * Evaluation filtering by status and model
 * Pagination for evaluation listing
@@ -342,6 +342,8 @@ Example:
 GET /evaluations?status=completed&model_name=llama3&limit=10&offset=0
 ```
 
+`limit` must be between 1 and 1000 (default: 100) and `offset` must be 0 or greater. Invalid values return `422 Unprocessable Entity`. Results are returned in creation order.
+
 ---
 
 ## Get Evaluation Summary
@@ -481,7 +483,9 @@ llm-evaluation-platform/
 │   │   └── ollama_model_client.py
 │   │
 │   ├── storage/
-│   │   └── evaluation_repository.py
+│   │   ├── base.py
+│   │   ├── evaluation_repository.py
+│   │   └── sqlite_evaluation_repository.py
 │   │
 │   ├── api.py
 │   ├── config.py
@@ -511,11 +515,20 @@ llm-evaluation-platform/
 
 # Storage
 
-The current repository implementation stores evaluation runs in memory.
+Evaluation runs are stored in SQLite, so evaluation history survives application restarts.
 
-This keeps the architecture intentionally simple for the current version, but evaluation history is not persistent across application restarts.
+The database location is configured with the `DATABASE_PATH` environment variable (default: `data/evaluations.db`). Docker Compose stores it in the `evaluation_data` volume at `/app/data/evaluations.db`.
 
-Persistent database storage is planned as a future improvement.
+Setting `DATABASE_PATH` to an empty string keeps evaluations in memory only, which is what the test suite uses.
+
+Each run stores everything needed to interpret it later:
+
+* The full dataset
+* The selected metrics
+* The judge model name, when `llm_judge` is used
+* Per-item results, status, timestamps, and any error
+
+When the application starts, runs left `PENDING` or `RUNNING` by a previous process are marked `FAILED` with the error `Interrupted by application restart`. They are not re-executed automatically.
 
 ---
 
@@ -535,11 +548,10 @@ Evaluation Run
 Evaluation Summary
 ```
 
-Background evaluations run inside the API process. Pending or running evaluations are lost if the application restarts.
+Background evaluations run inside the API process. Evaluations that are pending or running when the application restarts are marked as failed and must be submitted again.
 
 The project currently does not include:
 
-* Persistent database storage
 * A durable job queue
 * Web dashboard
 * Dataset versioning
@@ -554,7 +566,6 @@ Possible next steps include:
 
 * Embedding-based semantic similarity
 * Weighted metrics
-* Persistent database storage
 * Dataset versioning
 * Model-to-model comparison
 * Evaluation dashboards
