@@ -1,8 +1,10 @@
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
+    AggregationOptions,
     DatasetItem,
     EvaluationResult,
     MetricResult,
+    PassRule,
 )
 
 
@@ -35,7 +37,9 @@ class EvaluationEngine:
         item: DatasetItem,
         generated_output: str,
         metrics: list[str],
+        aggregation: AggregationOptions | None = None,
     ) -> EvaluationResult:
+        aggregation = aggregation or AggregationOptions()
 
         metric_results: list[MetricResult] = []
 
@@ -50,13 +54,58 @@ class EvaluationEngine:
 
             metric_results.append(metric_result)
 
-        overall_score = sum(result.score for result in metric_results) / len(
-            metric_results
-        )
+        overall_score = self._overall_score(metric_results, aggregation)
 
         return EvaluationResult(
             item_id=item.id,
             generated_output=generated_output,
             metrics=metric_results,
             overall_score=overall_score,
+            passed=self._passed(metric_results, overall_score, aggregation),
         )
+
+    @staticmethod
+    def _overall_score(
+        metric_results: list[MetricResult],
+        aggregation: AggregationOptions,
+    ) -> float:
+        """Return the weighted mean of the metric scores."""
+
+        weights = [
+            aggregation.weight_for(result.metric_name) for result in metric_results
+        ]
+        total_weight = sum(weights)
+
+        if total_weight == 0:
+            raise ValueError("at least one metric needs a positive weight")
+
+        weighted = sum(
+            weight * result.score
+            for weight, result in zip(weights, metric_results, strict=True)
+        )
+
+        # Guard against float error pushing the mean just outside [0, 1].
+        return min(1.0, max(0.0, weighted / total_weight))
+
+    @staticmethod
+    def _passed(
+        metric_results: list[MetricResult],
+        overall_score: float,
+        aggregation: AggregationOptions,
+    ) -> bool:
+        """Apply the pass rule. Metrics with weight 0 are informational."""
+
+        if aggregation.pass_rule == PassRule.OVERALL_SCORE:
+            assert aggregation.pass_threshold is not None
+            return overall_score >= aggregation.pass_threshold
+
+        counted = [
+            result.passed
+            for result in metric_results
+            if aggregation.weight_for(result.metric_name) > 0
+        ]
+
+        if aggregation.pass_rule == PassRule.ANY_METRIC:
+            return any(counted)
+
+        return all(counted)

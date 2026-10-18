@@ -1,4 +1,5 @@
 from app.models import (
+    EvaluationResult,
     EvaluationRun,
     EvaluationSummary,
     MetricSummary,
@@ -26,9 +27,7 @@ class EvaluationSummaryService:
                 metrics={},
             )
 
-        passed_items = sum(
-            1 for result in results if all(metric.passed for metric in result.metrics)
-        )
+        passed_items = sum(1 for result in results if self._passed(result))
 
         failed_items = total_items - passed_items
 
@@ -70,3 +69,12 @@ class EvaluationSummaryService:
             success_rate=success_rate,
             metrics=metrics,
         )
+
+    @staticmethod
+    def _passed(result: EvaluationResult) -> bool:
+        # Results stored before pass rules existed have no decision; they
+        # were judged by requiring every metric to pass.
+        if result.passed is not None:
+            return result.passed
+
+        return all(metric.passed for metric in result.metrics)

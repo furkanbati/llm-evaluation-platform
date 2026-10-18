@@ -316,6 +316,25 @@ Fields that are not set fall back to the `GENERATION_TEMPERATURE` (default `0.0`
 
 With the default temperature of `0.0`, the same request produces the same outputs. With a higher temperature, set a `seed` to make outputs repeatable. Outputs can still differ slightly between Ollama sessions, for example after the model is reloaded.
 
+`aggregation` is optional and controls how metric results combine for each item:
+
+```json
+"aggregation": {
+  "metric_weights": {"exact_match": 1, "llm_judge": 3},
+  "pass_rule": "overall_score",
+  "pass_threshold": 0.7
+}
+```
+
+* `metric_weights`: non-negative weights for the selected metrics. Metrics without a weight count as `1`. Each item's `overall_score` is the weighted mean of its metric scores. A weight of `0` keeps a metric as information only: it is still reported but does not affect the score or the pass decision.
+* `pass_rule`: when an item passes.
+  * `all_metrics` (default): every weighted metric passes.
+  * `any_metric`: at least one weighted metric passes.
+  * `overall_score`: `overall_score` is at least `pass_threshold`.
+* `pass_threshold`: between `0.0` and `1.0`, default `0.5`. Only valid with the `overall_score` rule.
+
+Without `aggregation`, every metric has the same weight and an item passes only when all metrics pass. The resolved settings are stored on the run, and each result records its `passed` decision.
+
 Evaluations run in the background. A valid request returns `202 Accepted` immediately with the `PENDING` run and a `Location` header pointing to it:
 
 ```http
@@ -381,7 +400,7 @@ Example:
 GET /evaluations?status=completed&model_name=llama3&limit=10&offset=0
 ```
 
-The list returns a lightweight view of each run without its dataset and per-item results: `id`, `dataset_id`, `dataset_name`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `status`, `item_count`, `created_at`, `completed_at`, `error_code`, and `error`. Use `GET /evaluations/{evaluation_id}` for the full run.
+The list returns a lightweight view of each run without its dataset and per-item results: `id`, `dataset_id`, `dataset_name`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `item_count`, `created_at`, `completed_at`, `error_code`, and `error`. Use `GET /evaluations/{evaluation_id}` for the full run.
 
 `limit` must be between 1 and 1000 (default: 100) and `offset` must be 0 or greater. Invalid values return `422 Unprocessable Entity`. Results are returned in creation order.
 
@@ -402,6 +421,8 @@ The summary includes:
 * Success rate
 * Per-metric average score
 * Per-metric pass rate
+
+Passed items follow the run's `pass_rule`, and the average score uses its `metric_weights`.
 
 ---
 

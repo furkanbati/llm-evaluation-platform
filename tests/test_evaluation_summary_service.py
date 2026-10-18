@@ -116,3 +116,44 @@ def test_summary_calculates_metric_statistics() -> None:
     assert summary.metrics["exact_match"].average_score == 0.5
 
     assert summary.metrics["exact_match"].pass_rate == 0.5
+
+
+def test_summary_uses_stored_pass_decision() -> None:
+    from app.services.evaluation_summary_service import (
+        EvaluationSummaryService,
+    )
+
+    result = create_result(score=0.0, passed=False)
+    result.passed = True
+
+    evaluation = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        results=[result],
+    )
+
+    summary = EvaluationSummaryService().build(evaluation)
+
+    assert summary.passed_items == 1
+    assert summary.success_rate == 1.0
+
+
+def test_summary_falls_back_to_all_metrics_for_old_results() -> None:
+    from app.services.evaluation_summary_service import (
+        EvaluationSummaryService,
+    )
+
+    evaluation = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        results=[
+            create_result(score=1.0, passed=True),
+            create_result(score=0.0, passed=False),
+        ],
+    )
+
+    assert evaluation.results[0].passed is None
+
+    summary = EvaluationSummaryService().build(evaluation)
+
+    assert summary.passed_items == 1

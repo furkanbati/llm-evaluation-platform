@@ -4,6 +4,7 @@ from app.errors import InvalidJudgeResponseError, ModelUnavailableError
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
+    AggregationOptions,
     Dataset,
     DatasetItem,
     EvaluationErrorCode,
@@ -50,6 +51,7 @@ class FailingEvaluationEngine:
         item: DatasetItem,
         generated_output: str,
         metrics: list[str],
+        aggregation: AggregationOptions | None = None,
     ) -> EvaluationResult:
         raise RuntimeError("Evaluation failed")
 
@@ -820,3 +822,51 @@ def test_runner_rejects_empty_provided_outputs_as_invalid_output() -> None:
     )
 
     assert result.error_code == EvaluationErrorCode.INVALID_MODEL_OUTPUT
+
+
+def test_runner_stores_and_applies_aggregation() -> None:
+    from app.evaluators.similarity import SimilarityEvaluator
+
+    registry = EvaluatorRegistry()
+    registry.register("exact_match", ExactMatchEvaluator())
+    registry.register("similarity", SimilarityEvaluator())
+
+    runner = EvaluationRunner(
+        engine=EvaluationEngine(registry),
+        model_client=StaticModelClient(["Paris!"]),
+    )
+
+    aggregation = AggregationOptions(
+        metric_weights={"exact_match": 0},
+        pass_rule="overall_score",
+        pass_threshold=0.8,
+    )
+
+    result = runner.run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match", "similarity"],
+        aggregation=aggregation,
+    )
+
+    [item] = result.results
+
+    assert result.aggregation == aggregation
+    assert item.metrics[0].passed is False
+    assert item.overall_score == item.metrics[1].score
+    assert item.passed is True
+
+
+def test_runner_defaults_aggregation() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    result = runner.run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert result.aggregation == AggregationOptions()
+    assert result.results[0].passed is True

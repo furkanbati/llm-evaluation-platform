@@ -240,6 +240,7 @@ def create_evaluation(
             model_name=request.model_name,
             metrics=request.metrics,
             generation_options=request.generation_options,
+            aggregation=request.aggregation,
         )
     except ValueError as exc:
         executor.release()
