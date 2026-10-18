@@ -115,6 +115,12 @@ class EvaluationRunner:
 
         try:
             if generated_outputs is None:
+                if self._model_client is None:
+                    raise ValueError(
+                        "Model client is required when generated outputs "
+                        "are not provided"
+                    )
+
                 inputs = [item.input for item in dataset.items]
 
                 generated_outputs = self._model_client.generate(
