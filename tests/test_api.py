@@ -13,6 +13,10 @@ from app.models import (
     EvaluationRun,
 )
 from app.services.model_client import ModelClient
+from app.storage.evaluation_repository import EvaluationRepository
+from app.storage.sqlite_evaluation_repository import (
+    SQLiteEvaluationRepository,
+)
 
 
 class FakeModelClient(ModelClient):
@@ -478,7 +482,10 @@ def test_get_evaluation_response_contains_expected_fields(
     assert set(data) == {
         "id",
         "dataset_id",
+        "dataset",
         "model_name",
+        "metrics",
+        "judge_model_name",
         "status",
         "results",
         "created_at",
@@ -1209,3 +1216,71 @@ def test_create_evaluation_reports_failure_through_get(
 
     assert data["status"] == "failed"
     assert data["error"] == "Ollama is unavailable"
+
+
+def test_create_repository_uses_sqlite_when_path_is_set(
+    tmp_path,
+) -> None:
+    repository = api.create_repository(
+        str(tmp_path / "evaluations.db"),
+    )
+
+    assert isinstance(repository, SQLiteEvaluationRepository)
+
+
+def test_create_repository_uses_memory_when_path_is_empty() -> None:
+    assert isinstance(
+        api.create_repository(""),
+        EvaluationRepository,
+    )
+
+
+def test_startup_marks_interrupted_runs_as_failed(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    repository = SQLiteEvaluationRepository(
+        str(tmp_path / "evaluations.db"),
+    )
+
+    interrupted = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status="running",
+    )
+    repository.save(interrupted)
+
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+        repository=repository,
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/evaluations/{interrupted.id}",
+        )
+
+    data = response.json()
+
+    assert data["status"] == "failed"
+    assert data["error"] == "Interrupted by application restart"
+
+
+def test_list_evaluations_rejects_invalid_pagination() -> None:
+    client = TestClient(app)
+
+    for query in (
+        "limit=0",
+        "limit=1001",
+        "limit=-5",
+        "offset=-1",
+    ):
+        response = client.get(f"/evaluations?{query}")
+
+        assert response.status_code == 422, query

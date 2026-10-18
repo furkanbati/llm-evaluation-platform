@@ -2,9 +2,10 @@ import threading
 from uuid import UUID
 
 from app.models import EvaluationRun, EvaluationStatus
+from app.storage.base import BaseEvaluationRepository
 
 
-class EvaluationRepository:
+class EvaluationRepository(BaseEvaluationRepository):
     """Thread-safe in-memory repository for evaluation runs."""
 
     def __init__(self) -> None:
@@ -40,6 +41,8 @@ class EvaluationRepository:
         self,
         status: EvaluationStatus | None = None,
         model_name: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[EvaluationRun]:
         """Return evaluations matching the provided filters."""
 
@@ -62,4 +65,7 @@ class EvaluationRepository:
                 if evaluation.model_name == model_name
             ]
 
-        return evaluations
+        if limit is None:
+            return evaluations[offset:]
+
+        return evaluations[offset : offset + limit]

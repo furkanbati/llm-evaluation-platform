@@ -107,7 +107,10 @@ class EvaluationRun(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     dataset_id: UUID
+    dataset: Dataset | None = None
     model_name: str = Field(min_length=1, max_length=200)
+    metrics: list[str] = Field(default_factory=list)
+    judge_model_name: str | None = Field(default=None, max_length=200)
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
     created_at: datetime = Field(

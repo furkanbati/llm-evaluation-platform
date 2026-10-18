@@ -16,6 +16,12 @@ JUDGE_MODEL_NAME = os.getenv(
     "llama3",
 )
 
+# Empty string keeps evaluations in memory only.
+DATABASE_PATH = os.getenv(
+    "DATABASE_PATH",
+    "data/evaluations.db",
+)
+
 JUDGE_TEMPERATURE = float(
     os.getenv("JUDGE_TEMPERATURE", "0.0")
 )

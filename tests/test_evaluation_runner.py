@@ -538,3 +538,99 @@ def test_execute_does_not_raise_when_engine_fails() -> None:
 
     assert result.status == EvaluationStatus.FAILED
     assert result.error == "Evaluation failed"
+
+
+def test_create_run_stores_dataset_and_settings() -> None:
+    registry = EvaluatorRegistry()
+    registry.register("exact_match", ExactMatchEvaluator())
+    registry.register("llm_judge", ExactMatchEvaluator())
+
+    runner = EvaluationRunner(
+        engine=EvaluationEngine(registry),
+        model_client=FakeModelClient(),
+        judge_model_name="judge-model",
+    )
+
+    dataset = create_dataset()
+
+    run = runner.create_run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match", "llm_judge"],
+    )
+
+    assert run.dataset == dataset
+    assert run.metrics == ["exact_match", "llm_judge"]
+    assert run.judge_model_name == "judge-model"
+
+
+def test_create_run_omits_judge_model_without_llm_judge() -> None:
+    registry = EvaluatorRegistry()
+    registry.register("exact_match", ExactMatchEvaluator())
+
+    runner = EvaluationRunner(
+        engine=EvaluationEngine(registry),
+        model_client=FakeModelClient(),
+        judge_model_name="judge-model",
+    )
+
+    run = runner.create_run(
+        dataset=create_dataset(),
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    assert run.judge_model_name is None
+
+
+def test_fail_interrupted_runs_marks_unfinished_runs_failed() -> None:
+    repository = EvaluationRepository()
+
+    runner = create_runner(
+        model_client=FakeModelClient(),
+        repository=repository,
+    )
+
+    dataset = create_dataset()
+
+    pending = runner.create_run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    running = runner.create_run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+    running.status = EvaluationStatus.RUNNING
+    repository.save(running)
+
+    completed = runner.run(
+        dataset=dataset,
+        model_name="llama3",
+        metrics=["exact_match"],
+    )
+
+    updated = runner.fail_interrupted_runs()
+
+    assert updated == 2
+
+    for run in (pending, running):
+        stored = repository.get(run.id)
+
+        assert stored.status == EvaluationStatus.FAILED
+        assert stored.error == "Interrupted by application restart"
+        assert stored.completed_at is not None
+
+    assert repository.get(completed.id).status == EvaluationStatus.COMPLETED
+    assert repository.get(completed.id).error is None
+
+
+def test_fail_interrupted_runs_returns_zero_when_nothing_to_do() -> None:
+    runner = create_runner(
+        model_client=FakeModelClient(),
+    )
+
+    assert runner.fail_interrupted_runs() == 0
