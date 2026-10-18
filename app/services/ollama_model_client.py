@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 
 from app.services.model_client import ModelClient
@@ -9,8 +11,10 @@ class OllamaModelClient(ModelClient):
     def __init__(
         self,
         base_url: str,
+        options: dict[str, Any] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._options = options
 
     def generate(
         self,
@@ -22,13 +26,18 @@ class OllamaModelClient(ModelClient):
         outputs: list[str] = []
 
         for input_text in inputs:
+            payload: dict[str, Any] = {
+                "model": model_name,
+                "prompt": input_text,
+                "stream": False,
+            }
+
+            if self._options:
+                payload["options"] = self._options
+
             response = httpx.post(
                 f"{self._base_url}/api/generate",
-                json={
-                    "model": model_name,
-                    "prompt": input_text,
-                    "stream": False,
-                },
+                json=payload,
                 timeout=60.0,
             )
 

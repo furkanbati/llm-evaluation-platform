@@ -7,6 +7,7 @@ from app.config import (
     APP_NAME,
     APP_VERSION,
     JUDGE_MODEL_NAME,
+    JUDGE_TEMPERATURE,
     OLLAMA_BASE_URL,
 )
 from app.evaluators.exact_match import ExactMatchEvaluator
@@ -57,8 +58,14 @@ def handle_unexpected_exception(
 def create_evaluation_runner(
     model_client: ModelClient | None = None,
     repository: EvaluationRepository | None = None,
+    judge_model_client: ModelClient | None = None,
 ) -> EvaluationRunner:
-    """Create the evaluation runner with registered evaluators."""
+    """Create the evaluation runner with registered evaluators.
+
+    When no clients are given, the judge uses its own Ollama client
+    configured with JUDGE_TEMPERATURE so its decisions are stable.
+    Otherwise the judge falls back to the provided model client.
+    """
 
     registry = EvaluatorRegistry()
 
@@ -72,6 +79,17 @@ def create_evaluation_runner(
         SimilarityEvaluator(),
     )
 
+    if judge_model_client is None:
+        if model_client is None:
+            judge_model_client = OllamaModelClient(
+                base_url=OLLAMA_BASE_URL,
+                options={
+                    "temperature": JUDGE_TEMPERATURE,
+                },
+            )
+        else:
+            judge_model_client = model_client
+
     if model_client is None:
         model_client = OllamaModelClient(
             base_url=OLLAMA_BASE_URL,
@@ -80,7 +98,7 @@ def create_evaluation_runner(
     registry.register(
         "llm_judge",
         LLMJudgeEvaluator(
-            model_client=model_client,
+            model_client=judge_model_client,
             model_name=JUDGE_MODEL_NAME,
         ),
     )

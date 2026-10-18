@@ -1042,3 +1042,26 @@ def test_create_evaluation_supports_llm_judge_metric(
     assert metric["score"] == 1.0
     assert metric["passed"] is True
 
+
+
+def test_default_runner_uses_deterministic_judge_client() -> None:
+    runner = create_evaluation_runner()
+
+    judge = runner._engine._registry.get("llm_judge")
+
+    assert judge._model_client._options == {
+        "temperature": 0.0,
+    }
+
+
+def test_runner_uses_separate_judge_model_client() -> None:
+    judge_client = FakeEvaluationWithJudgeModelClient()
+
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+        judge_model_client=judge_client,
+    )
+
+    judge = runner._engine._registry.get("llm_judge")
+
+    assert judge._model_client is judge_client
