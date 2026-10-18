@@ -6,6 +6,7 @@ from app.models import (
     Dataset,
     DatasetItem,
     EvaluationResult,
+    EvaluationRun,
     EvaluationStatus,
 )
 from app.services.evaluation_engine import EvaluationEngine
@@ -635,3 +636,30 @@ def test_fail_interrupted_runs_returns_zero_when_nothing_to_do() -> None:
     )
 
     assert runner.fail_interrupted_runs() == 0
+
+
+def test_execute_fails_run_without_model_client() -> None:
+    registry = EvaluatorRegistry()
+    registry.register("exact_match", ExactMatchEvaluator())
+
+    runner = EvaluationRunner(
+        engine=EvaluationEngine(registry),
+    )
+
+    dataset = create_dataset()
+
+    run = EvaluationRun(
+        dataset_id=dataset.id,
+        model_name="llama3",
+    )
+
+    result = runner.execute(
+        evaluation_run=run,
+        dataset=dataset,
+        metrics=["exact_match"],
+    )
+
+    assert result.status == EvaluationStatus.FAILED
+    assert result.error == (
+        "Model client is required when generated outputs are not provided"
+    )
