@@ -2,6 +2,7 @@ from typing import Any
 
 import httpx
 
+from app.models import GenerationOptions
 from app.services.model_client import ModelClient
 
 
@@ -20,8 +21,14 @@ class OllamaModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         """Generate one output for each input."""
+
+        merged_options = {
+            **(self._options or {}),
+            **(options.to_provider_options() if options else {}),
+        }
 
         outputs: list[str] = []
 
@@ -32,8 +39,8 @@ class OllamaModelClient(ModelClient):
                 "stream": False,
             }
 
-            if self._options:
-                payload["options"] = self._options
+            if merged_options:
+                payload["options"] = merged_options
 
             response = httpx.post(
                 f"{self._base_url}/api/generate",

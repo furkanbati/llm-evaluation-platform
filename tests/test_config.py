@@ -102,3 +102,55 @@ def test_database_path_uses_environment_variable(
     importlib.reload(config)
 
     assert config.DATABASE_PATH == "/tmp/evaluations.db"
+
+
+def test_generation_temperature_defaults_to_zero(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "GENERATION_TEMPERATURE",
+        raising=False,
+    )
+
+    importlib.reload(config)
+
+    assert config.GENERATION_TEMPERATURE == 0.0
+
+
+def test_generation_temperature_can_be_left_to_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "GENERATION_TEMPERATURE",
+        "",
+    )
+
+    importlib.reload(config)
+
+    assert config.GENERATION_TEMPERATURE is None
+
+
+def test_generation_seed_is_unset_by_default(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "GENERATION_SEED",
+        raising=False,
+    )
+
+    importlib.reload(config)
+
+    assert config.GENERATION_SEED is None
+
+
+def test_generation_seed_uses_environment_variable(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "GENERATION_SEED",
+        "42",
+    )
+
+    importlib.reload(config)
+
+    assert config.GENERATION_SEED == 42

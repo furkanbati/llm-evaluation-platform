@@ -16,6 +16,8 @@ from app.config import (
     APP_NAME,
     APP_VERSION,
     DATABASE_PATH,
+    GENERATION_SEED,
+    GENERATION_TEMPERATURE,
     JUDGE_MODEL_NAME,
     JUDGE_TEMPERATURE,
     OLLAMA_BASE_URL,
@@ -30,6 +32,7 @@ from app.models import (
     EvaluationRun,
     EvaluationStatus,
     EvaluationSummary,
+    GenerationOptions,
     HealthResponse,
 )
 from app.services.evaluation_engine import EvaluationEngine
@@ -141,6 +144,10 @@ def create_evaluation_runner(
         model_client=model_client,
         repository=repository,
         judge_model_name=JUDGE_MODEL_NAME,
+        default_generation_options=GenerationOptions(
+            temperature=GENERATION_TEMPERATURE,
+            seed=GENERATION_SEED,
+        ),
     )
 
 
@@ -207,6 +214,7 @@ def create_evaluation(
             dataset=request.dataset,
             model_name=request.model_name,
             metrics=request.metrics,
+            generation_options=request.generation_options,
         )
     except ValueError as exc:
         raise HTTPException(

@@ -7,6 +7,7 @@ from app.models import (
     DatasetItem,
     EvaluationRun,
     EvaluationStatus,
+    GenerationOptions,
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner
@@ -18,6 +19,7 @@ class FakeModelClient(ModelClient):
         self,
         model_name: str,
         inputs: list[str],
+        options: GenerationOptions | None = None,
     ) -> list[str]:
         return [
             "Paris",

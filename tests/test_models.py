@@ -11,6 +11,7 @@ from app.models import (
     EvaluationRun,
     EvaluationStatus,
     EvaluationSummary,
+    GenerationOptions,
     MetricResult,
     MetricSummary,
 )
@@ -271,3 +272,30 @@ def test_metric_summary_accepts_valid_values() -> None:
 
     assert summary.average_score == 0.8
     assert summary.pass_rate == 0.6
+
+
+def test_generation_options_default_to_unset() -> None:
+    options = GenerationOptions()
+
+    assert options.temperature is None
+    assert options.seed is None
+    assert options.to_provider_options() == {}
+
+
+def test_generation_options_export_only_set_fields() -> None:
+    options = GenerationOptions(seed=42)
+
+    assert options.to_provider_options() == {"seed": 42}
+
+
+@pytest.mark.parametrize("temperature", [-0.1, 2.1])
+def test_generation_options_reject_out_of_range_temperature(
+    temperature: float,
+) -> None:
+    with pytest.raises(ValidationError):
+        GenerationOptions(temperature=temperature)
+
+
+def test_generation_options_reject_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        GenerationOptions(top_k=10)

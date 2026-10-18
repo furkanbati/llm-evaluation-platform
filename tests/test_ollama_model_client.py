@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.config import OLLAMA_BASE_URL
+from app.models import GenerationOptions
 from app.services.ollama_model_client import OllamaModelClient
 
 
@@ -123,6 +124,61 @@ def test_ollama_model_client_omits_options_by_default(
     client.generate(
         model_name="llama3",
         inputs=["question"],
+    )
+
+    assert "options" not in payloads[0]
+
+
+def test_ollama_model_client_sends_call_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = _capture_post(monkeypatch)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    client.generate(
+        model_name="llama3",
+        inputs=["question"],
+        options=GenerationOptions(temperature=0.7, seed=42),
+    )
+
+    assert payloads[0]["options"] == {"temperature": 0.7, "seed": 42}
+
+
+def test_ollama_model_client_call_options_override_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = _capture_post(monkeypatch)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+        options={"temperature": 0.0, "num_ctx": 4096},
+    )
+
+    client.generate(
+        model_name="llama3",
+        inputs=["question"],
+        options=GenerationOptions(temperature=0.5),
+    )
+
+    assert payloads[0]["options"] == {"temperature": 0.5, "num_ctx": 4096}
+
+
+def test_ollama_model_client_omits_unset_call_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = _capture_post(monkeypatch)
+
+    client = OllamaModelClient(
+        base_url="http://ollama:11434",
+    )
+
+    client.generate(
+        model_name="llama3",
+        inputs=["question"],
+        options=GenerationOptions(),
     )
 
     assert "options" not in payloads[0]
