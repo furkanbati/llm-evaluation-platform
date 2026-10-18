@@ -10,8 +10,8 @@ from app.models import (
     EvaluationResult,
     EvaluationRun,
     EvaluationStatus,
-    MetricResult,
     EvaluationSummary,
+    MetricResult,
     MetricSummary,
 )
 

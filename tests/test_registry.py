@@ -1,5 +1,6 @@
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.registry import EvaluatorRegistry
+from app.evaluators.similarity import SimilarityEvaluator
 
 
 def test_registry_registers_evaluator() -> None:
@@ -29,7 +30,7 @@ def test_registry_rejects_duplicate_registration() -> None:
             "exact_match",
             ExactMatchEvaluator(),
         )
-        assert False, "Expected ValueError"
+        raise AssertionError("Expected ValueError")
     except ValueError:
         pass
 
@@ -51,7 +52,7 @@ def test_registry_rejects_unknown_evaluator() -> None:
 
     try:
         registry.get("unknown_metric")
-        assert False, "Expected ValueError"
+        raise AssertionError("Expected ValueError")
     except ValueError:
         pass
 
@@ -68,7 +69,6 @@ def test_registry_lists_registered_metrics() -> None:
         "exact_match"
     ]
 
-from app.evaluators.similarity import SimilarityEvaluator
 
 
 def test_registry_registers_similarity_evaluator() -> None:
@@ -89,4 +89,3 @@ def test_registry_registers_similarity_evaluator() -> None:
     )
 
 
-    

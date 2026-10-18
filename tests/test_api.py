@@ -1,9 +1,9 @@
 
 from uuid import uuid4
 
-import app.api as api
 from fastapi.testclient import TestClient
 
+import app.api as api
 from app.api import (
     app,
     create_evaluation_runner,

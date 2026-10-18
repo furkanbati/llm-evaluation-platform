@@ -5,8 +5,8 @@ from app.evaluators.registry import EvaluatorRegistry
 from app.models import (
     Dataset,
     DatasetItem,
-    EvaluationStatus,
     EvaluationResult,
+    EvaluationStatus,
 )
 from app.services.evaluation_engine import EvaluationEngine
 from app.services.evaluation_runner import EvaluationRunner

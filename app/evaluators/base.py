@@ -19,4 +19,3 @@ class Evaluator(ABC):
         """
 
 
-        
