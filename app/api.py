@@ -1,6 +1,12 @@
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.responses import JSONResponse
 
 from app.config import (
@@ -149,6 +155,7 @@ def list_metrics() -> dict[str, list[str]]:
 @app.post(
     "/evaluations",
     response_model=EvaluationRun,
+    status_code=202,
     responses={
         400: {
             "model": ErrorResponse,
@@ -160,9 +167,19 @@ def list_metrics() -> dict[str, list[str]]:
 )
 def create_evaluation(
     request: EvaluationRequest,
+    background_tasks: BackgroundTasks,
+    response: Response,
 ) -> EvaluationRun:
+    """Accept an evaluation and execute it in the background.
+
+    The returned run is PENDING; poll GET /evaluations/{id} for the
+    outcome.
+    """
+
+    runner = evaluation_runner
+
     try:
-        return evaluation_runner.run(
+        evaluation_run = runner.create_run(
             dataset=request.dataset,
             model_name=request.model_name,
             metrics=request.metrics,
@@ -172,6 +189,19 @@ def create_evaluation(
             status_code=400,
             detail=str(exc),
         ) from exc
+
+    background_tasks.add_task(
+        runner.execute,
+        evaluation_run=evaluation_run,
+        dataset=request.dataset,
+        metrics=request.metrics,
+    )
+
+    response.headers["Location"] = (
+        f"/evaluations/{evaluation_run.id}"
+    )
+
+    return evaluation_run.model_copy(deep=True)
 
 
 @app.get(
