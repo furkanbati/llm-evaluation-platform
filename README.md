@@ -15,7 +15,9 @@ The platform generates answers with a model served by Ollama, scores them with p
 * **Reproducible generation:** `temperature` and `seed` for the evaluated model, stored on each run
 * **Configurable scoring:** metric weights and pass rules (`all_metrics`, `any_metric`, `overall_score`)
 * **Persistent storage:** runs, datasets, settings, and results are stored in SQLite
-* **Restart handling:** runs interrupted by a restart are marked as failed on startup
+* **Item-by-item execution:** each dataset item is generated, scored, and stored before the next one starts, so one failing item does not discard the others
+* **Retries:** transient provider errors and invalid judge answers are retried with exponential backoff; a run stops early when the model does not exist or too many items fail in a row
+* **Restart handling:** runs interrupted by a restart resume from the first unfinished item on startup
 * **Error codes:** failures are reported as categories such as `model_unavailable` or `invalid_judge_response`, without exposing internal details
 * **Summaries:** pass counts, success rate, average score, and per-metric statistics
 * **Listing:** lightweight list responses with filtering by status and model, and validated pagination
@@ -104,10 +106,12 @@ This separation keeps request handling, scheduling, orchestration, metric implem
 2. The API reserves a place in the evaluation queue, or returns `503` when the queue is full.
 3. `EvaluationRunner` validates the request and stores a `PENDING` run with its dataset and resolved settings.
 4. The API responds immediately with `202 Accepted`.
-5. When a worker is free, the run becomes `RUNNING` and the model generates an output for each dataset item.
-6. `EvaluationEngine` runs the selected metrics, computes each item's weighted `overall_score`, and applies the pass rule.
-7. The run is stored as `COMPLETED` with its results, or as `FAILED` with an error code.
-8. The client polls the run and reads its results and summary statistics.
+5. When a worker is free, the run becomes `RUNNING` and its items are processed one at a time:
+   1. The model generates an output for the item.
+   2. `EvaluationEngine` runs the selected metrics, computes the item's weighted `overall_score`, and applies the pass rule.
+   3. The item's result, or the reason it could not be scored, is stored immediately.
+6. The run is stored as `COMPLETED`, `COMPLETED_WITH_ERRORS`, or `FAILED`.
+7. The client polls the run and reads its results and summary statistics. Results appear while the run is still `RUNNING`.
 
 The evaluation lifecycle is:
 
@@ -116,12 +120,31 @@ PENDING (queued)
    ↓
 RUNNING
    ↓
-COMPLETED or FAILED
+COMPLETED, COMPLETED_WITH_ERRORS or FAILED
 ```
 
-A `PENDING` or `RUNNING` run becomes `FAILED` with error code `interrupted` if the application restarts before it finishes.
+| Status | Meaning |
+|---|---|
+| `completed` | Every item was scored |
+| `completed_with_errors` | Some items were scored; the others are listed in `item_errors` |
+| `failed` | No item could be scored, or the run stopped early; results scored before that are kept |
 
-Failed runs include an `error_code` and a short `error` message that is safe to show to clients:
+## Item errors and retries
+
+Generation and scoring are retried separately, so a failed judge call does not generate the answer again. Errors that may be temporary (`model_unavailable`, `model_timeout`, `model_provider_error`, `invalid_model_output`, `invalid_judge_response`) are tried up to `EVALUATION_MAX_ATTEMPTS` times, waiting `EVALUATION_RETRY_BACKOFF_SECONDS`, then twice as long after each further failure. Other errors are not retried.
+
+An item that still fails is recorded in the run's `item_errors` with its `error_code`, a client-safe `error`, the number of `attempts`, and the `generated_output` when only scoring failed. The run then continues with the next item.
+
+The run stops early, as `FAILED`, when:
+
+* The model does not exist on the provider (`model_not_found`), since every item would fail the same way
+* `EVALUATION_MAX_CONSECUTIVE_FAILURES` items in a row could not be scored, which usually means the provider is down
+
+Items not processed because the run stopped are counted as `pending_items` in the summary.
+
+## Error codes
+
+Failed runs and item errors include an `error_code` and a short `error` message that is safe to show to clients:
 
 | `error_code` | Meaning |
 |---|---|
@@ -131,7 +154,7 @@ Failed runs include an `error_code` and a short `error` message that is safe to 
 | `model_provider_error` | The provider returned an error or an unexpected response |
 | `invalid_model_output` | The model returned an empty output or the wrong number of outputs |
 | `invalid_judge_response` | The LLM judge answered something other than YES or NO |
-| `interrupted` | The application restarted while the run was in progress |
+| `interrupted` | The application restarted while the run was in progress and the run could not be resumed |
 | `internal_error` | Any other failure |
 
 The original exception, including provider addresses and system messages, is written only to the server log.
@@ -523,9 +546,9 @@ The limits apply to a single API process.
 GET /evaluations/{evaluation_id}
 ```
 
-Returns the full run: `id`, `dataset_id`, `dataset`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `results`, `created_at`, `completed_at`, `error_code`, and `error`.
+Returns the full run: `id`, `dataset_id`, `dataset`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `results`, `item_errors`, `created_at`, `completed_at`, `error_code`, and `error`.
 
-Each result contains the item ID, the generated output, every metric's score and pass decision, the weighted `overall_score`, and the item's `passed` decision.
+Each result contains the item ID, the generated output, every metric's score and pass decision, the weighted `overall_score`, and the item's `passed` decision. Results and item errors are ordered by dataset position and appear as items finish, so a `RUNNING` run shows its progress.
 
 Unknown IDs return `404 Not Found`.
 
@@ -552,7 +575,7 @@ Example:
 GET /evaluations?status=completed&model_name=llama3&limit=10&offset=0
 ```
 
-The list returns a lightweight view of each run without its dataset and per-item results: `id`, `dataset_id`, `dataset_name`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `item_count`, `created_at`, `completed_at`, `error_code`, and `error`. Use `GET /evaluations/{evaluation_id}` for the full run.
+The list returns a lightweight view of each run without its dataset and per-item results: `id`, `dataset_id`, `dataset_name`, `model_name`, `metrics`, `judge_model_name`, `generation_options`, `aggregation`, `status`, `item_count`, `scored_items`, `errored_items`, `created_at`, `completed_at`, `error_code`, and `error`. Use `GET /evaluations/{evaluation_id}` for the full run.
 
 `limit` must be between 1 and 1000 (default: 100) and `offset` must be 0 or greater. Invalid values return `422 Unprocessable Entity`. Results are returned in creation order.
 
@@ -566,15 +589,17 @@ GET /evaluations/{evaluation_id}/summary
 
 The summary includes:
 
-* Total items
-* Passed items
-* Failed items
-* Average score
-* Success rate
-* Per-metric average score
-* Per-metric pass rate
+* `total_items`: items in the dataset
+* `scored_items`: items with a result, split into `passed_items` and `failed_items`
+* `errored_items`: items that could not be scored
+* `pending_items`: items not processed yet, or skipped because the run stopped
+* `average_score` and `success_rate`, over scored items
+* `coverage`: the share of all items that were scored
+* Per-metric average score and pass rate
 
 Passed items follow the run's `pass_rule`, and the average score uses its `metric_weights`.
+
+Scores and rates only describe the items that were scored. Read them together with `coverage`: a `success_rate` of `0.9` at a `coverage` of `0.5` says nothing about the half of the dataset that was not scored.
 
 ---
 
@@ -584,7 +609,7 @@ Passed items follow the run's `pass_rule`, and the average score uses its `metri
 DELETE /evaluations/{evaluation_id}
 ```
 
-Returns `204 No Content`, or `404 Not Found` for unknown IDs.
+Returns `204 No Content`, or `404 Not Found` for unknown IDs. Deleting a running evaluation stops it before its next item.
 
 ---
 
@@ -678,6 +703,9 @@ Settings are read from environment variables:
 | `DATABASE_PATH` | `data/evaluations.db` | SQLite file; empty keeps runs in memory only |
 | `MAX_CONCURRENT_EVALUATIONS` | `2` | Evaluations that run at once |
 | `MAX_QUEUED_EVALUATIONS` | `100` | Evaluations that can be queued or running before requests get `503` |
+| `EVALUATION_MAX_ATTEMPTS` | `3` | Attempts per model or judge call for errors that may be temporary |
+| `EVALUATION_RETRY_BACKOFF_SECONDS` | `1.0` | Wait before the first retry; doubles after each further failure |
+| `EVALUATION_MAX_CONSECUTIVE_FAILURES` | `5` | Items in a row that may fail before the run stops |
 
 Docker Compose sets `OLLAMA_BASE_URL` and `DATABASE_PATH` for the containers. The API listens on port `8000`, set by the `uvicorn` command in the `Dockerfile`.
 
@@ -730,9 +758,10 @@ The test suite covers:
 * Evaluators, including judge prompt construction and prompt injection handling
 * Evaluation engine, metric weights, and pass rules
 * Evaluation runner, failure handling, and error codes
+* Item-by-item execution: partial results, retries and backoff, early stops, resuming, and runs deleted while running
 * Background execution, concurrency limits, and queue limits
 * Model clients, generation options, and provider error translation
-* In-memory and SQLite repositories, persistence, and restart handling
+* In-memory and SQLite repositories, per-item storage, migration of older databases, and restart handling
 * Evaluation summaries
 * API endpoints, filtering, and pagination
 * Configuration
@@ -791,6 +820,7 @@ llm-evaluation-platform/
 │   ├── test_metric_accuracy.py
 │   ├── test_normalized_match.py
 │   ├── test_numeric_match.py
+│   ├── test_per_item_execution.py
 │   ├── test_semantic_similarity.py
 │   ├── test_token_f1.py
 │   └── ...
@@ -823,9 +853,14 @@ Each run stores everything needed to interpret it later:
 * The judge model name, when `llm_judge` is used
 * The resolved generation options and aggregation settings
 * Per-item results with metric scores, `overall_score`, and `passed`
+* Per-item errors for items that could not be scored
 * Status, timestamps, `error_code`, and `error`
 
-When the application starts, runs left `PENDING` or `RUNNING` by a previous process are marked `FAILED` with error code `interrupted` and the message `Interrupted by application restart`. They are not re-executed automatically.
+A run's settings and status are stored in the `evaluation_runs` table. Each item's result or error is a row of `evaluation_items`, written as soon as the item finishes, so recording an item does not rewrite the run. Databases created by earlier versions, which kept results inside the run, are migrated on startup.
+
+When the application starts, runs left `PENDING` or `RUNNING` by a previous process are queued again and resume from the first item without a result or error. Runs that cannot be resumed (stored without a dataset, or more than the queue can hold) are marked `FAILED` with error code `interrupted` and keep the results they already have.
+
+Resuming assumes a single API process. With several processes sharing one database, a starting process would also resume runs that another process is still executing.
 
 Runs stored by earlier versions may lack newer fields such as `error_code` or per-item `passed`. They are still readable, and summaries fall back to requiring every metric to pass.
 
@@ -847,7 +882,7 @@ Evaluation Run
 Evaluation Summary
 ```
 
-Background evaluations run inside the API process. Evaluations that are pending or running when the application restarts are marked as failed and must be submitted again.
+Background evaluations run inside the API process. Evaluations that are pending or running when the application restarts resume from their first unfinished item.
 
 The project currently does not include:
 
@@ -878,10 +913,11 @@ Possible next steps include:
 
 **Operations**
 
-* A durable job queue, so queued evaluations survive restarts and limits apply across multiple API workers
-* A `Retry-After` header on `503` responses and retries for transient provider errors
+* A durable job queue, so limits apply across multiple API workers and resuming does not assume a single process
+* A `Retry-After` header on `503` responses
+* Processing several items of a run in parallel when the provider allows it
 * Building list responses without loading full runs from the database
-* Migrations for stored runs when the run schema changes
+* Versioned migrations for stored runs when the run schema changes
 * More generation options, such as `top_p` and `num_predict`
 
 **Data**

@@ -254,10 +254,14 @@ def test_models_reject_invalid_types() -> None:
 def test_evaluation_summary_accepts_valid_values() -> None:
     summary = EvaluationSummary(
         total_items=10,
+        scored_items=10,
         passed_items=8,
         failed_items=2,
+        errored_items=0,
+        pending_items=0,
         average_score=0.8,
         success_rate=0.8,
+        coverage=1.0,
     )
 
     assert summary.total_items == 10
@@ -411,3 +415,50 @@ def test_request_accepts_valid_aggregation() -> None:
 
     assert request.aggregation is not None
     assert request.aggregation.weight_for("similarity") == 2
+
+
+def test_dataset_rejects_duplicate_item_ids() -> None:
+    item_id = uuid4()
+
+    with pytest.raises(ValidationError, match="dataset item ids must be unique"):
+        Dataset(
+            name="duplicates",
+            items=[
+                DatasetItem(id=item_id, input="q1", expected_output="a1"),
+                DatasetItem(id=item_id, input="q2", expected_output="a2"),
+            ],
+        )
+
+
+def test_list_item_counts_scored_and_errored_items() -> None:
+    from app.models import EvaluationErrorCode, ItemError
+
+    run = EvaluationRun(
+        dataset_id=uuid4(),
+        model_name="llama3",
+        status=EvaluationStatus.COMPLETED_WITH_ERRORS,
+        results=[
+            EvaluationResult(
+                item_id=uuid4(),
+                generated_output="Paris",
+                metrics=[
+                    MetricResult(metric_name="exact_match", score=1.0, passed=True)
+                ],
+                overall_score=1.0,
+            )
+        ],
+        item_errors=[
+            ItemError(
+                item_id=uuid4(),
+                error_code=EvaluationErrorCode.MODEL_TIMEOUT,
+                error="The model provider did not respond in time.",
+                attempts=3,
+            )
+        ],
+    )
+
+    item = EvaluationRunListItem.from_run(run)
+
+    assert item.item_count == 2
+    assert item.scored_items == 1
+    assert item.errored_items == 1

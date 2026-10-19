@@ -11,6 +11,13 @@ class EvaluationError(Exception):
     code = EvaluationErrorCode.INTERNAL_ERROR
     public_message = "An internal error occurred while running the evaluation."
 
+    # Whether trying the same call again may succeed, e.g. after a timeout.
+    retryable = False
+
+    # Whether the failure affects every item, so the run should stop instead
+    # of moving on to the next item, e.g. a model that does not exist.
+    fatal = False
+
     def __init__(
         self,
         detail: str = "",
@@ -25,15 +32,18 @@ class EvaluationError(Exception):
 class ModelUnavailableError(EvaluationError):
     code = EvaluationErrorCode.MODEL_UNAVAILABLE
     public_message = "Could not connect to the model provider."
+    retryable = True
 
 
 class ModelTimeoutError(EvaluationError):
     code = EvaluationErrorCode.MODEL_TIMEOUT
     public_message = "The model provider did not respond in time."
+    retryable = True
 
 
 class ModelNotFoundError(EvaluationError):
     code = EvaluationErrorCode.MODEL_NOT_FOUND
+    fatal = True
 
     def __init__(
         self,
@@ -51,13 +61,16 @@ class ModelNotFoundError(EvaluationError):
 class ModelProviderError(EvaluationError):
     code = EvaluationErrorCode.MODEL_PROVIDER_ERROR
     public_message = "The model provider returned an error."
+    retryable = True
 
 
 class InvalidModelOutputError(EvaluationError, ValueError):
     code = EvaluationErrorCode.INVALID_MODEL_OUTPUT
     public_message = "The model returned an invalid output."
+    retryable = True
 
 
 class InvalidJudgeResponseError(EvaluationError, ValueError):
     code = EvaluationErrorCode.INVALID_JUDGE_RESPONSE
     public_message = "The LLM judge returned a response that was not YES or NO."
+    retryable = True
