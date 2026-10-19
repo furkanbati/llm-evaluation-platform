@@ -21,10 +21,12 @@ class FakeModelClient(ModelClient):
         inputs: list[str],
         options: GenerationOptions | None = None,
     ) -> list[str]:
-        return [
-            "Paris",
-            "Ankara",
-        ]
+        answers = {
+            "q1": "Paris",
+            "q2": "Ankara",
+        }
+
+        return [answers[input_text] for input_text in inputs]
 
 
 def create_runner(

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -15,6 +16,9 @@ from app.config import (
     APP_NAME,
     APP_VERSION,
     DATABASE_PATH,
+    EVALUATION_MAX_ATTEMPTS,
+    EVALUATION_MAX_CONSECUTIVE_FAILURES,
+    EVALUATION_RETRY_BACKOFF_SECONDS,
     GENERATION_SEED,
     GENERATION_TEMPERATURE,
     JUDGE_MODEL_NAME,
@@ -62,10 +66,58 @@ from app.storage.sqlite_evaluation_repository import (
     SQLiteEvaluationRepository,
 )
 
+logger = logging.getLogger(__name__)
+
+
+def resume_interrupted_evaluations(
+    runner: EvaluationRunner,
+    executor: EvaluationExecutor,
+) -> int:
+    """Queue runs left unfinished by a previous process again.
+
+    Finished items are kept and only the remaining items are processed.
+    Runs without a stored dataset, or that do not fit in the queue, are
+    marked as interrupted instead. Returns the number of resumed runs.
+
+    Assumes a single application process: another process sharing the
+    database would see its own running evaluations as interrupted.
+    """
+
+    resumed = 0
+
+    for evaluation_run in runner.interrupted_runs():
+        dataset = evaluation_run.dataset
+
+        if dataset is None:
+            runner.fail_interrupted_run(evaluation_run)
+            continue
+
+        try:
+            executor.reserve()
+        except EvaluationQueueFullError:
+            runner.fail_interrupted_run(evaluation_run)
+            continue
+
+        runner.prepare_resume(evaluation_run)
+
+        executor.submit(
+            runner.execute,
+            evaluation_run=evaluation_run,
+            dataset=dataset,
+            metrics=evaluation_run.metrics,
+        )
+
+        resumed += 1
+
+    if resumed:
+        logger.warning("Resumed %d interrupted evaluation runs", resumed)
+
+    return resumed
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    evaluation_runner.fail_interrupted_runs()
+    resume_interrupted_evaluations(evaluation_runner, evaluation_executor)
     yield
     # Queued evaluations are cancelled; the next startup marks them as
     # interrupted.
@@ -196,6 +248,9 @@ def create_evaluation_runner(
             temperature=GENERATION_TEMPERATURE,
             seed=GENERATION_SEED,
         ),
+        max_attempts=EVALUATION_MAX_ATTEMPTS,
+        retry_backoff_seconds=EVALUATION_RETRY_BACKOFF_SECONDS,
+        max_consecutive_failures=EVALUATION_MAX_CONSECUTIVE_FAILURES,
     )
 
 

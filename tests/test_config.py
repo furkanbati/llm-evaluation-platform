@@ -202,3 +202,34 @@ def test_semantic_similarity_settings_use_environment_variables(
 
     assert config.SEMANTIC_SIMILARITY_MODEL == "mxbai-embed-large"
     assert config.SEMANTIC_SIMILARITY_THRESHOLD == 0.6
+
+
+def test_retry_settings_use_defaults(
+    monkeypatch,
+) -> None:
+    for name in (
+        "EVALUATION_MAX_ATTEMPTS",
+        "EVALUATION_RETRY_BACKOFF_SECONDS",
+        "EVALUATION_MAX_CONSECUTIVE_FAILURES",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    importlib.reload(config)
+
+    assert config.EVALUATION_MAX_ATTEMPTS == 3
+    assert config.EVALUATION_RETRY_BACKOFF_SECONDS == 1.0
+    assert config.EVALUATION_MAX_CONSECUTIVE_FAILURES == 5
+
+
+def test_retry_settings_use_environment_variables(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("EVALUATION_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("EVALUATION_RETRY_BACKOFF_SECONDS", "0.25")
+    monkeypatch.setenv("EVALUATION_MAX_CONSECUTIVE_FAILURES", "10")
+
+    importlib.reload(config)
+
+    assert config.EVALUATION_MAX_ATTEMPTS == 5
+    assert config.EVALUATION_RETRY_BACKOFF_SECONDS == 0.25
+    assert config.EVALUATION_MAX_CONSECUTIVE_FAILURES == 10

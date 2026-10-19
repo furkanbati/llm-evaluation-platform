@@ -12,7 +12,18 @@ class EvaluationStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    # Finished, but some items could not be scored; see `item_errors`.
+    COMPLETED_WITH_ERRORS = "completed_with_errors"
     FAILED = "failed"
+
+
+FINISHED_STATUSES = frozenset(
+    {
+        EvaluationStatus.COMPLETED,
+        EvaluationStatus.COMPLETED_WITH_ERRORS,
+        EvaluationStatus.FAILED,
+    }
+)
 
 
 class EvaluationErrorCode(StrEnum):
@@ -54,6 +65,18 @@ class Dataset(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2_000)
     items: list[DatasetItem] = Field(min_length=1)
+
+    @field_validator("items")
+    @classmethod
+    def validate_unique_item_ids(cls, items: list[DatasetItem]) -> list[DatasetItem]:
+        """Item IDs identify stored results, so they must be unique."""
+
+        ids = [item.id for item in items]
+
+        if len(ids) != len(set(ids)):
+            raise ValueError("dataset item ids must be unique")
+
+        return items
 
 
 class PassRule(StrEnum):
@@ -199,6 +222,22 @@ class EvaluationResult(BaseModel):
     passed: bool | None = None
 
 
+class ItemError(BaseModel):
+    """A dataset item that could not be scored.
+
+    `generated_output` is set when generation succeeded and scoring failed,
+    e.g. when the LLM judge gave an invalid answer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID
+    error_code: EvaluationErrorCode
+    error: str = Field(min_length=1, max_length=1_000)
+    attempts: int = Field(ge=1)
+    generated_output: str | None = Field(default=None, max_length=20_000)
+
+
 class EvaluationRun(BaseModel):
     """A concrete execution of an evaluation request."""
 
@@ -217,6 +256,7 @@ class EvaluationRun(BaseModel):
     aggregation: AggregationOptions = Field(default_factory=AggregationOptions)
     status: EvaluationStatus = EvaluationStatus.PENDING
     results: list[EvaluationResult] = Field(default_factory=list)
+    item_errors: list[ItemError] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     error_code: EvaluationErrorCode | None = None
@@ -241,6 +281,8 @@ class EvaluationRunListItem(BaseModel):
     aggregation: AggregationOptions
     status: EvaluationStatus
     item_count: int = Field(ge=0)
+    scored_items: int = Field(ge=0)
+    errored_items: int = Field(ge=0)
     created_at: datetime
     completed_at: datetime | None
     error_code: EvaluationErrorCode | None
@@ -249,7 +291,11 @@ class EvaluationRunListItem(BaseModel):
     @classmethod
     def from_run(cls, run: EvaluationRun) -> "EvaluationRunListItem":
         # Runs stored before datasets were recorded only have results.
-        item_count = len(run.dataset.items) if run.dataset else len(run.results)
+        item_count = (
+            len(run.dataset.items)
+            if run.dataset
+            else len(run.results) + len(run.item_errors)
+        )
 
         return cls(
             id=run.id,
@@ -262,6 +308,8 @@ class EvaluationRunListItem(BaseModel):
             aggregation=run.aggregation,
             status=run.status,
             item_count=item_count,
+            scored_items=len(run.results),
+            errored_items=len(run.item_errors),
             created_at=run.created_at,
             completed_at=run.completed_at,
             error_code=run.error_code,
@@ -310,7 +358,14 @@ class MetricSummary(BaseModel):
 
 
 class EvaluationSummary(BaseModel):
-    """Aggregated statistics for an evaluation run."""
+    """Aggregated statistics for an evaluation run.
+
+    `passed_items` and `failed_items` split the scored items by the pass
+    rule. Items that could not be scored are `errored_items`; items not
+    processed yet, or skipped because the run stopped, are `pending_items`.
+    Scores and rates are computed over scored items only, so read them
+    together with `coverage`, the share of all items that were scored.
+    """
 
     model_config = ConfigDict(
         extra="forbid",
@@ -318,13 +373,20 @@ class EvaluationSummary(BaseModel):
     )
 
     total_items: int = Field(ge=0)
+    scored_items: int = Field(ge=0)
     passed_items: int = Field(ge=0)
     failed_items: int = Field(ge=0)
+    errored_items: int = Field(ge=0)
+    pending_items: int = Field(ge=0)
     average_score: float = Field(
         ge=0.0,
         le=1.0,
     )
     success_rate: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    coverage: float = Field(
         ge=0.0,
         le=1.0,
     )

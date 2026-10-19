@@ -46,3 +46,16 @@ SEMANTIC_SIMILARITY_MODEL = os.getenv("SEMANTIC_SIMILARITY_MODEL", "nomic-embed-
 SEMANTIC_SIMILARITY_THRESHOLD = float(
     os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.73")
 )
+
+# Attempts per model or judge call for errors that may be temporary, such as
+# timeouts. Waits double after each failed attempt, starting at the backoff.
+EVALUATION_MAX_ATTEMPTS = int(os.getenv("EVALUATION_MAX_ATTEMPTS", "3"))
+EVALUATION_RETRY_BACKOFF_SECONDS = float(
+    os.getenv("EVALUATION_RETRY_BACKOFF_SECONDS", "1.0")
+)
+
+# A run stops after this many items in a row could not be scored, so an
+# unreachable provider does not cost a retry cycle for every remaining item.
+EVALUATION_MAX_CONSECUTIVE_FAILURES = int(
+    os.getenv("EVALUATION_MAX_CONSECUTIVE_FAILURES", "5")
+)

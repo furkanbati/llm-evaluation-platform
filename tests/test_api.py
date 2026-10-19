@@ -491,6 +491,7 @@ def test_get_evaluation_response_contains_expected_fields(
         "aggregation",
         "status",
         "results",
+        "item_errors",
         "created_at",
         "completed_at",
         "error_code",
@@ -1558,6 +1559,8 @@ def test_list_evaluations_omits_dataset_and_results(
         "aggregation",
         "status",
         "item_count",
+        "scored_items",
+        "errored_items",
         "created_at",
         "completed_at",
         "error_code",
@@ -1566,6 +1569,8 @@ def test_list_evaluations_omits_dataset_and_results(
     assert item["id"] == created["id"]
     assert item["dataset_name"] == "math-test"
     assert item["item_count"] == 1
+    assert item["scored_items"] == 1
+    assert item["errored_items"] == 0
     assert item["status"] == "completed"
 
     detail = client.get(f"/evaluations/{created['id']}").json()
@@ -1786,3 +1791,192 @@ def test_create_evaluation_supports_semantic_similarity(
     assert metric["metric_name"] == "semantic_similarity"
     assert metric["score"] == 1.0
     assert metric["passed"] is True
+
+
+class RecordingInputsModelClient(ModelClient):
+    def __init__(self) -> None:
+        self.inputs: list[str] = []
+
+    def generate(
+        self,
+        model_name: str,
+        inputs: list[str],
+        options: GenerationOptions | None = None,
+    ) -> list[str]:
+        self.inputs.extend(inputs)
+        return ["4"]
+
+
+def test_startup_resumes_interrupted_runs_from_the_first_unfinished_item(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.models import (
+        Dataset,
+        DatasetItem,
+        EvaluationResult,
+        MetricResult,
+    )
+
+    repository = SQLiteEvaluationRepository(
+        str(tmp_path / "evaluations.db"),
+    )
+
+    dataset = Dataset(
+        name="math-test",
+        items=[
+            DatasetItem(input="2 + 2", expected_output="4"),
+            DatasetItem(input="3 + 1", expected_output="4"),
+        ],
+    )
+
+    interrupted = repository.save(
+        EvaluationRun(
+            dataset_id=dataset.id,
+            dataset=dataset,
+            model_name="llama3",
+            metrics=["exact_match"],
+            status="running",
+        )
+    )
+
+    repository.save_result(
+        interrupted.id,
+        0,
+        EvaluationResult(
+            item_id=dataset.items[0].id,
+            generated_output="4",
+            metrics=[MetricResult(metric_name="exact_match", score=1.0, passed=True)],
+            overall_score=1.0,
+            passed=True,
+        ),
+    )
+
+    model_client = RecordingInputsModelClient()
+
+    runner = create_evaluation_runner(
+        model_client=model_client,
+        repository=repository,
+    )
+
+    monkeypatch.setattr(
+        api,
+        "evaluation_runner",
+        runner,
+    )
+
+    with TestClient(app) as client:
+        data = client.get(f"/evaluations/{interrupted.id}").json()
+        summary = client.get(f"/evaluations/{interrupted.id}/summary").json()
+
+    assert model_client.inputs == ["3 + 1"]
+    assert data["status"] == "completed"
+    assert len(data["results"]) == 2
+    assert summary["coverage"] == 1.0
+
+
+def test_startup_fails_interrupted_runs_that_do_not_fit_in_the_queue(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.models import Dataset, DatasetItem
+    from app.services.evaluation_executor import EvaluationExecutor
+    from tests.conftest import ManualExecutor
+
+    repository = SQLiteEvaluationRepository(
+        str(tmp_path / "evaluations.db"),
+    )
+
+    runs = [
+        repository.save(
+            EvaluationRun(
+                dataset_id=dataset.id,
+                dataset=dataset,
+                model_name="llama3",
+                metrics=["exact_match"],
+                status="pending",
+            )
+        )
+        for dataset in (
+            Dataset(
+                name=f"queued-{index}",
+                items=[DatasetItem(input="2 + 2", expected_output="4")],
+            )
+            for index in range(2)
+        )
+    ]
+
+    runner = create_evaluation_runner(
+        model_client=FakeModelClient(),
+        repository=repository,
+    )
+
+    monkeypatch.setattr(api, "evaluation_runner", runner)
+    monkeypatch.setattr(
+        api,
+        "evaluation_executor",
+        EvaluationExecutor(
+            max_concurrent=1,
+            max_queued=1,
+            executor=ManualExecutor(),
+        ),
+    )
+
+    with TestClient(app) as client:
+        statuses = [
+            client.get(f"/evaluations/{run.id}").json()["status"] for run in runs
+        ]
+
+    assert statuses == ["pending", "failed"]
+
+
+def test_partially_failed_evaluation_keeps_scored_items(monkeypatch) -> None:
+    class FailsOnSecondItemClient(ModelClient):
+        def generate(
+            self,
+            model_name: str,
+            inputs: list[str],
+            options: GenerationOptions | None = None,
+        ) -> list[str]:
+            if inputs == ["3 + 1"]:
+                raise ModelUnavailableError("connection refused")
+
+            return ["4"]
+
+    runner = create_evaluation_runner(
+        model_client=FailsOnSecondItemClient(),
+        repository=EvaluationRepository(),
+    )
+
+    monkeypatch.setattr(api, "evaluation_runner", runner)
+
+    client = TestClient(app)
+
+    created = client.post(
+        "/evaluations",
+        json={
+            "dataset": {
+                "name": "math-test",
+                "items": [
+                    {"input": "2 + 2", "expected_output": "4"},
+                    {"input": "3 + 1", "expected_output": "4"},
+                ],
+            },
+            "model_name": "llama3",
+            "metrics": ["exact_match"],
+        },
+    ).json()
+
+    data = client.get(f"/evaluations/{created['id']}").json()
+    summary = client.get(f"/evaluations/{created['id']}/summary").json()
+
+    assert data["status"] == "completed_with_errors"
+    assert data["error_code"] is None
+    assert len(data["results"]) == 1
+    [item_error] = data["item_errors"]
+    assert item_error["error_code"] == "model_unavailable"
+    assert item_error["error"] == "Could not connect to the model provider."
+    assert "connection refused" not in str(data)
+    assert summary["scored_items"] == 1
+    assert summary["errored_items"] == 1
+    assert summary["coverage"] == 0.5

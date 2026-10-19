@@ -15,25 +15,41 @@ class EvaluationSummaryService:
     ) -> EvaluationSummary:
         results = evaluation.results
 
-        total_items = len(results)
+        scored_items = len(results)
+        errored_items = len(evaluation.item_errors)
 
-        if total_items == 0:
+        # Runs stored before datasets were recorded only have their outcomes.
+        total_items = (
+            len(evaluation.dataset.items)
+            if evaluation.dataset is not None
+            else scored_items + errored_items
+        )
+
+        pending_items = max(0, total_items - scored_items - errored_items)
+
+        coverage = scored_items / total_items if total_items else 0.0
+
+        if scored_items == 0:
             return EvaluationSummary(
-                total_items=0,
+                total_items=total_items,
+                scored_items=0,
                 passed_items=0,
                 failed_items=0,
+                errored_items=errored_items,
+                pending_items=pending_items,
                 average_score=0.0,
                 success_rate=0.0,
+                coverage=coverage,
                 metrics={},
             )
 
         passed_items = sum(1 for result in results if self._passed(result))
 
-        failed_items = total_items - passed_items
+        failed_items = scored_items - passed_items
 
-        average_score = sum(result.overall_score for result in results) / total_items
+        average_score = sum(result.overall_score for result in results) / scored_items
 
-        success_rate = passed_items / total_items
+        success_rate = passed_items / scored_items
 
         metric_scores: dict[str, list[float]] = {}
         metric_passes: dict[str, list[bool]] = {}
@@ -63,10 +79,14 @@ class EvaluationSummaryService:
 
         return EvaluationSummary(
             total_items=total_items,
+            scored_items=scored_items,
             passed_items=passed_items,
             failed_items=failed_items,
+            errored_items=errored_items,
+            pending_items=pending_items,
             average_score=average_score,
             success_rate=success_rate,
+            coverage=coverage,
             metrics=metrics,
         )
 

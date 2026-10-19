@@ -9,6 +9,9 @@ import pytest
 # SQLite database file. Tests that need SQLite use a temporary path.
 os.environ["DATABASE_PATH"] = ""
 
+# Retry without waiting, so tests of failing providers stay fast.
+os.environ["EVALUATION_RETRY_BACKOFF_SECONDS"] = "0"
+
 
 class ImmediateExecutor(Executor):
     """Runs submitted work in the calling thread before returning."""

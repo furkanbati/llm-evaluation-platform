@@ -72,6 +72,10 @@ class RecordingEvaluationRepository(EvaluationRepository):
         self.statuses.append(evaluation.status)
         return super().save(evaluation)
 
+    def update_run(self, evaluation):
+        self.statuses.append(evaluation.status)
+        return super().update_run(evaluation)
+
 
 def create_runner(
     model_client: ModelClient,
@@ -204,7 +208,7 @@ def test_runner_saves_completed_evaluation_to_repository() -> None:
 
     saved = runner._repository.get(result.id)
 
-    assert saved is result
+    assert saved == result
     assert saved.status == EvaluationStatus.COMPLETED
 
 
@@ -231,7 +235,7 @@ def test_runner_saves_failed_evaluation_to_repository() -> None:
 
     saved = runner._repository.get(result.id)
 
-    assert saved is result
+    assert saved == result
     assert saved.status == EvaluationStatus.FAILED
 
 
@@ -259,7 +263,7 @@ def test_runner_uses_provided_repository() -> None:
         metrics=["exact_match"],
     )
 
-    assert repository.get(result.id) is result
+    assert repository.get(result.id) == result
 
 
 def test_runner_transitions_from_pending_to_running() -> None:
@@ -513,7 +517,7 @@ def test_create_run_stores_pending_run_without_generating() -> None:
     )
 
     assert run.status == EvaluationStatus.PENDING
-    assert repository.get(run.id) is run
+    assert repository.get(run.id) == run
     assert model_client.calls == 0
 
 
@@ -674,9 +678,11 @@ def test_execute_fails_run_without_model_client() -> None:
 
     dataset = create_dataset()
 
-    run = EvaluationRun(
-        dataset_id=dataset.id,
-        model_name="llama3",
+    run = runner.repository.save(
+        EvaluationRun(
+            dataset_id=dataset.id,
+            model_name="llama3",
+        )
     )
 
     result = runner.execute(
